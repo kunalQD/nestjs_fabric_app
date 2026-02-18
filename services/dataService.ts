@@ -43,13 +43,29 @@ const normalizeStatus = (rawStatus: any): OrderStatus => {
 const formatImageSource = (img: any): string => {
   if (!img || typeof img !== 'string') return '';
   let cleanStr = img.trim().replace(/^["']|["']$/g, '');
+
+  // 1. Explicit GridFS indicator
   if (cleanStr.toLowerCase().startsWith('gridfs:')) {
     const idPart = cleanStr.split(':')[1];
     return `${API_BASE}/images/gridfs/${idPart}`;
   }
-  if (cleanStr.startsWith('data:image')) return cleanStr;
-  if (cleanStr.length > 50 && !cleanStr.includes('/')) return `data:image/jpeg;base64,${cleanStr}`;
-  if (cleanStr.length === 24 && /^[0-9a-fA-F]+$/.test(cleanStr)) return `${API_BASE}/images/gridfs/${cleanStr}`;
+
+  // 2. Standard Data URI or HTTP link
+  if (cleanStr.startsWith('data:image') || cleanStr.startsWith('http')) {
+    return cleanStr;
+  }
+
+  // 3. Raw Base64 detection (No spaces, long string)
+  // Removed !includes('/') because base64 often contains slashes
+  if (cleanStr.length > 100 && !cleanStr.includes(' ')) {
+    return `data:image/jpeg;base64,${cleanStr}`;
+  }
+
+  // 4. Bare MongoDB ID (24 hex chars)
+  if (cleanStr.length === 24 && /^[0-9a-fA-F]+$/.test(cleanStr)) {
+    return `${API_BASE}/images/gridfs/${cleanStr}`;
+  }
+
   return '';
 };
 
