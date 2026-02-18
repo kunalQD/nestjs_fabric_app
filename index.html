@@ -4,33 +4,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quilt & Drapes</title>
+    <title>Quilt & Drapes | Operations</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:wght@700&display=swap');
+      
       body {
         font-family: 'Outfit', sans-serif;
         background-color: #fcfcfc;
         color: #1a1a1a;
+        margin: 0;
       }
+      
       h1, h2, h3, .brand-font {
         font-family: 'Playfair Display', serif;
       }
-      .kanban-scroll::-webkit-scrollbar {
-        height: 6px;
-      }
-      .kanban-scroll::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .kanban-scroll::-webkit-scrollbar-thumb {
-        background: #e2e8f0;
-        border-radius: 10px;
-      }
-      .glass-card {
-        background: rgba(255, 255, 255, 0.8);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(0, 0, 0, 0.05);
+
+      .kanban-scroll::-webkit-scrollbar { height: 6px; }
+      .kanban-scroll::-webkit-scrollbar-track { background: transparent; }
+      .kanban-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+
+      @media print {
+        @page {
+          margin: 0mm;
+          size: auto;
+        }
+        body {
+          margin: 0;
+          padding: 0;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        .no-print {
+          display: none !important;
+        }
       }
     </style>
 <script type="importmap">
@@ -42,10 +50,9 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
 <body>
     <div id="root"></div>
-<script type="module" src="/index.tsx"></script>
+    <script type="module" src="./index.tsx"></script>
 </body>
 </html>
