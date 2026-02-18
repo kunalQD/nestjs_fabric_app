@@ -1,0 +1,7 @@
+{
+  "name": "Quilt & Drapes Management System",
+  "description": "A comprehensive order management, fabric calculator, and billing system for custom window treatments, featuring Kanban workflows, automated billing, and installation scheduling.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
