@@ -183,7 +183,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
                 <th className="px-6 md:px-8 py-5">Order Context</th>
                 <th className="px-6 md:px-8 py-5">Status</th>
                 <th className="px-6 md:px-8 py-5">Timeline</th>
-                <th className="px-6 md:px-8 py-5">Team</th>
+                <th className="px-6 md:px-8 py-5">Assignment</th>
                 <th className="px-6 md:px-8 py-5 text-right">Actions</th>
               </tr>
             </thead>
@@ -202,9 +202,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
                   <td className="px-6 md:px-8 py-4">
                     <div className="font-bold text-slate-700">{order.due_date ? new Date(order.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'TBD'}</div>
                   </td>
-                  <td className="px-6 md:px-8 py-4 text-[10px] font-black">
-                    <span className="text-slate-600">T: {order.tailor || '-'}</span><br/>
-                    <span className="text-[#c5a059]">F: {order.fitter || '-'}</span>
+                  <td className="px-6 md:px-8 py-4">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[8px] font-black text-slate-400 uppercase">Tailor</span>
+                        <span className="text-[10px] font-black text-slate-700">{order.tailor || 'None'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[8px] font-black text-[#c5a059] uppercase">Fitter</span>
+                        <span className="text-[10px] font-black text-[#c5a059]">{order.fitter || 'None'}</span>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-6 md:px-8 py-4 text-right">
                     <button 

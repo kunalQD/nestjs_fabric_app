@@ -1,6 +1,7 @@
+
 import { Order, OrderStatus, OrderBilling, WindowEntry } from '../types';
 
-const BASE_URL = 'https://fabric-calc-5uhi.onrender.com';
+const BASE_URL = 'https://fabric-calc-5uhi.onrender.com'; // Change this to your backend URL
 const API_BASE = `${BASE_URL}/api`;
 
 const getAuthHeader = () => {
@@ -44,24 +45,19 @@ const formatImageSource = (img: any): string => {
   if (!img || typeof img !== 'string') return '';
   let cleanStr = img.trim().replace(/^["']|["']$/g, '');
 
-  // 1. Explicit GridFS indicator
   if (cleanStr.toLowerCase().startsWith('gridfs:')) {
     const idPart = cleanStr.split(':')[1];
     return `${API_BASE}/images/gridfs/${idPart}`;
   }
 
-  // 2. Standard Data URI or HTTP link
   if (cleanStr.startsWith('data:image') || cleanStr.startsWith('http')) {
     return cleanStr;
   }
 
-  // 3. Raw Base64 detection (No spaces, long string)
-  // Removed !includes('/') because base64 often contains slashes
   if (cleanStr.length > 100 && !cleanStr.includes(' ')) {
     return `data:image/jpeg;base64,${cleanStr}`;
   }
 
-  // 4. Bare MongoDB ID (24 hex chars)
   if (cleanStr.length === 24 && /^[0-9a-fA-F]+$/.test(cleanStr)) {
     return `${API_BASE}/images/gridfs/${cleanStr}`;
   }
@@ -99,7 +95,8 @@ const mapBackendOrder = (o: any): Order => {
       track: parseFloat(e.Track || e.track) || 0,
       sqft: parseFloat(e.SQFT || e.sqft) || 0,
       notes: e.Notes || e.notes || '',
-      images: sanitizeImages(e.Images || e.images)
+      images: sanitizeImages(e.Images || e.images),
+      is_double_layer: !!(e.IsDouble || e.is_double_layer)
     })) : []
   };
 };
@@ -199,7 +196,8 @@ export const dataService = {
         Track: e.track,
         SQFT: e.sqft,
         Notes: e.notes,
-        Images: e.images
+        Images: e.images,
+        IsDouble: e.is_double_layer
       }))
     };
     const res = await fetch(url, {
@@ -239,7 +237,13 @@ export const dataService = {
         fitting_total: Number(b.fitting_total) || 0,
         grand_total: Number(b.grand_total) || 0,
         payment_status: b.payment_status || 'Pending',
-        stitching_breakup: Array.isArray(b.stitching_breakup) ? b.stitching_breakup : [],
+        stitching_breakup: Array.isArray(b.stitching_breakup) ? b.stitching_breakup.map((i: any) => ({
+          type: i.type || 'Window Allocation',
+          subtype: i.subtype || '',
+          qty: i.qty || 0,
+          rate: i.rate || 0,
+          amount: i.amount || 0
+        })) : [],
         fitting_breakup: Array.isArray(b.fitting_breakup) ? b.fitting_breakup : []
       }));
     } catch (err) {

@@ -5,19 +5,24 @@ import { Dashboard } from './pages/Dashboard';
 import { Calculator } from './pages/Calculator';
 import { Billing } from './pages/Billing';
 import { Calendar } from './pages/Calendar';
+import { Visualizer } from './pages/Visualizer';
 import { Login } from './pages/Login';
-import { Order, UserRole, OrderStatus } from './types';
+import { UserRole } from './types';
 import { dataService } from './services/dataService';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<{ username: string; role: UserRole } | null>(null);
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'calculator' | 'billing' | 'calendar'>('dashboard');
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'calculator' | 'billing' | 'calendar' | 'visualizer'>('dashboard');
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('qd_user');
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem('qd_user');
+      }
     }
   }, []);
 
@@ -31,6 +36,7 @@ const App: React.FC = () => {
     await dataService.logout();
     setUser(null);
     localStorage.removeItem('qd_user');
+    localStorage.removeItem('qd_token');
   };
 
   const navigateToCalculator = (orderId?: string) => {
@@ -38,7 +44,6 @@ const App: React.FC = () => {
     setCurrentPage('calculator');
   };
 
-  // Global error handler for auth errors
   const onAuthError = () => {
     handleLogout();
   };
@@ -71,13 +76,15 @@ const App: React.FC = () => {
         {currentPage === 'calendar' && (
           <Calendar />
         )}
+        {currentPage === 'visualizer' && (
+          <Visualizer />
+        )}
       </main>
       
-      {/* Floating Action Button */}
       {currentPage === 'dashboard' && (
         <button 
           onClick={() => navigateToCalculator()}
-          className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-2xl flex items-center justify-center transition-transform hover:scale-110 active:scale-95"
+          className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-2xl flex items-center justify-center transition-transform hover:scale-110 active:scale-95 z-50"
         >
           <i className="fas fa-plus text-xl"></i>
         </button>

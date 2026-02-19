@@ -25,6 +25,7 @@ export interface WindowEntry {
   sqft: number;
   notes: string;
   images: string[];
+  is_double_layer?: boolean;
 }
 
 export interface Order {
@@ -42,7 +43,8 @@ export interface Order {
 }
 
 export interface BillingLineItem {
-  type: string;
+  type: string;      // Used for Room/Description
+  subtype?: string;  // Used for Stitch/Style (e.g. Pleated)
   qty: number;
   rate: number;
   amount: number;

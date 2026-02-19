@@ -4,8 +4,8 @@ import { OrderStatus } from './types';
 export const SHOWROOMS = ['Anna Nagar', 'Valasaravakkam'];
 export const STITCH_TYPES = ['Pleated', 'Ripple', 'Eyelet', 'Roman Blinds 48"', 'Roman Blinds 54"', 'Blinds (Regular)'];
 export const LINING_TYPES = ['No Lining', 'Normal Lining', 'B/O Lining'];
-export const TAILORS = ['Dev', 'Dinesh'];
-export const FITTERS = ['Dev', 'Dinesh', 'Krishna'];
+export const TAILORS = ['None', 'Dev', 'Dinesh'];
+export const FITTERS = ['None', 'Dev', 'Dinesh', 'Krishna'];
 
 // Branded Colors based on quiltanddrapes.com
 export const BRAND_COLORS = {

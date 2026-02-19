@@ -40,8 +40,8 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
     showroom: SHOWROOMS[0],
     status: OrderStatus.FABRIC_PENDING,
     due_date: '',
-    tailor: '',
-    fitter: ''
+    tailor: TAILORS[0], // Defaults to 'None'
+    fitter: FITTERS[0]   // Defaults to 'None'
   });
 
   const [entries, setEntries] = useState<WindowEntry[]>([]);
@@ -52,7 +52,8 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
     width: 0,
     height: 0,
     notes: '',
-    images: []
+    images: [],
+    is_double_layer: false
   });
   
   const [isEditWindow, setIsEditWindow] = useState<number | null>(null);
@@ -71,8 +72,8 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
             showroom: order.showroom,
             status: order.status,
             due_date: order.due_date,
-            tailor: order.tailor,
-            fitter: order.fitter
+            tailor: order.tailor || TAILORS[0],
+            fitter: order.fitter || FITTERS[0]
           });
           setEntries(order.entries);
         }
@@ -81,21 +82,30 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
     }
   }, [orderId]);
 
-  const calculateMetrics = (stitch: string, w: number, h: number) => {
+  const calculateMetrics = (stitch: string, w: number, h: number, isDouble: boolean) => {
     let panels = 0;
     if (stitch === 'Pleated') panels = Math.round(w / 18);
     else if (stitch === 'Ripple') panels = Math.round(w / 20);
     else if (stitch === 'Eyelet') panels = Math.round(w / 24);
     else panels = 1;
+    
+    if (isDouble && !stitch.includes('Roman') && !stitch.includes('Blinds')) {
+      panels *= 2;
+    }
+
     const hf = (h + 14) / 39;
     const quantity = parseFloat((panels * hf).toFixed(2));
+    
     let sqft = 0;
     if (stitch.includes('Roman') || stitch.includes('Blinds')) {
       sqft = parseFloat(((Math.ceil(w / 12 * 2) / 2) * (Math.ceil(h / 12 * 2) / 2)).toFixed(2));
+      if (isDouble) sqft *= 2;
     }
+    
     let track = 0;
     if (!stitch.includes('Roman') && !stitch.includes('Blinds')) {
       track = Math.ceil((w / 12) * 2) / 2;
+      if (isDouble) track *= 2;
     }
     return { panels, quantity, sqft, track };
   };
@@ -137,7 +147,8 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
     const { panels, quantity, sqft, track } = calculateMetrics(
       currentEntry.stitch_type || STITCH_TYPES[0],
       currentEntry.width || 0,
-      currentEntry.height || 0
+      currentEntry.height || 0,
+      !!currentEntry.is_double_layer
     );
     const windowId = currentEntry.window_id || Math.random().toString(36).substr(2, 9);
     const newEntry: WindowEntry = {
@@ -149,6 +160,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
       height: currentEntry.height || 0,
       notes: currentEntry.notes || '',
       images: currentEntry.images || [],
+      is_double_layer: !!currentEntry.is_double_layer,
       panels,
       quantity,
       sqft,
@@ -169,7 +181,8 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
       width: 0,
       height: 0,
       notes: '',
-      images: []
+      images: [],
+      is_double_layer: false
     });
   };
 
@@ -201,7 +214,6 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-10 pb-24 relative">
-      {/* Screen Interface */}
       <div className="no-print space-y-6 md:space-y-10">
         <div className="flex flex-col gap-6 border-b border-slate-100 pb-8">
           <div className="flex justify-between items-start">
@@ -265,6 +277,20 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
             <Select label="Lining Type" options={LINING_TYPES} value={currentEntry.lining_type || LINING_TYPES[0]} onChange={v => setCurrentEntry({...currentEntry, lining_type: v})} />
             <Input type="number" label="Width (Inches)" value={currentEntry.width || 0} onChange={v => setCurrentEntry({...currentEntry, width: parseFloat(v) || 0})} />
             <Input type="number" label="Height (Inches)" value={currentEntry.height || 0} onChange={v => setCurrentEntry({...currentEntry, height: parseFloat(v) || 0})} />
+            
+            <div className="md:col-span-1 flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 h-[58px] mt-6">
+              <input 
+                type="checkbox" 
+                id="double-layer" 
+                checked={currentEntry.is_double_layer || false}
+                onChange={(e) => setCurrentEntry({...currentEntry, is_double_layer: e.target.checked})}
+                className="w-5 h-5 accent-[#c5a059]"
+              />
+              <label htmlFor="double-layer" className="text-[10px] font-black text-[#002d62] uppercase tracking-widest cursor-pointer">
+                Double Layer / Day-Night
+              </label>
+            </div>
+
             <div className="md:col-span-2">
               <Input label="Execution Notes" value={currentEntry.notes || ''} onChange={v => setCurrentEntry({...currentEntry, notes: v})} />
             </div>
@@ -316,12 +342,18 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
               ) : entries.map((e, idx) => (
                 <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 md:px-10 py-6">
-                    <div className="font-black text-slate-800 text-base">{e.window_name}</div>
+                    <div className="font-black text-slate-800 text-base">
+                      {e.window_name} {e.is_double_layer ? <span className="text-[8px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full ml-2 border border-amber-100 font-black">2 LAYERS</span> : ''}
+                    </div>
                     <div className="text-[9px] text-[#c5a059] font-black uppercase tracking-widest">{e.stitch_type} • {e.lining_type}</div>
                   </td>
                   <td className="px-6 md:px-10 py-6 text-center">
                     <div className="font-black text-slate-700">{e.width}" x {e.height}"</div>
-                    <div className="text-[8px] text-slate-400 font-bold uppercase">{e.panels} Panels</div>
+                    <div className="text-[8px] text-slate-400 font-bold uppercase">
+                      {e.stitch_type.toLowerCase().includes('blind') || e.stitch_type.toLowerCase().includes('roman') 
+                        ? `${e.sqft} Sqft` 
+                        : `${e.panels} Panels`}
+                    </div>
                   </td>
                   <td className="px-6 md:px-10 py-6 text-center font-mono font-black text-[#002d62] text-lg">{e.quantity.toFixed(2)} M</td>
                   <td className="px-6 md:px-10 py-6 text-right">
@@ -339,7 +371,6 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
         </div>
       </div>
 
-      {/* Dedicated Print View (A4 Job Sheet) */}
       <div className="only-print bg-white p-12 min-h-screen font-sans text-slate-900">
         <div className="flex justify-between items-start mb-12 border-b-8 border-[#002d62] pb-10">
           <div>
@@ -392,7 +423,9 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
             {entries.map((e, idx) => (
               <React.Fragment key={idx}>
                 <tr className="bg-white">
-                  <td className="p-4 font-black text-slate-800">{e.window_name}</td>
+                  <td className="p-4 font-black text-slate-800">
+                    {e.window_name} {e.is_double_layer ? '(Double Layer)' : ''}
+                  </td>
                   <td className="p-4 text-center font-bold text-slate-600">{e.width}" x {e.height}"</td>
                   <td className="p-4 text-center text-xs text-slate-500 font-bold uppercase">
                     {e.stitch_type}<br/>{e.lining_type}

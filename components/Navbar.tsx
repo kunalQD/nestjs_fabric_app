@@ -14,6 +14,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPage, setCurrentPage, use
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', roles: [UserRole.ADMIN, UserRole.STAFF] },
+    { id: 'visualizer', label: 'AI Visualizer', roles: [UserRole.ADMIN, UserRole.STAFF] },
     { id: 'billing', label: 'Billing', roles: [UserRole.ADMIN] },
     { id: 'calendar', label: 'Schedule', roles: [UserRole.ADMIN, UserRole.STAFF] },
     { id: 'calculator', label: 'Create Order', roles: [UserRole.ADMIN, UserRole.STAFF], highlight: true },
