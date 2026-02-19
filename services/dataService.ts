@@ -1,7 +1,7 @@
 
 import { Order, OrderStatus, OrderBilling, WindowEntry } from '../types';
 
-const BASE_URL = 'http://localhost:5000'; // Change this to your backend URL or use environment variable
+const BASE_URL = 'https://fabric-calc-5uhi.onrender.com';
 const API_BASE = `${BASE_URL}/api`;
 
 const getAuthHeader = () => {
