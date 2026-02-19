@@ -1,7 +1,7 @@
 
 import { Order, OrderStatus, OrderBilling, WindowEntry } from '../types';
 
-const BASE_URL = 'https://fabric-calc-5uhi.onrender.com'; // Change this to your backend URL
+const BASE_URL = 'http://localhost:5000'; // Change this to your backend URL or use environment variable
 const API_BASE = `${BASE_URL}/api`;
 
 const getAuthHeader = () => {
@@ -248,6 +248,21 @@ export const dataService = {
       }));
     } catch (err) {
       console.error("Billing Fetch Error:", err);
+      throw err;
+    }
+  },
+
+  generateAIPreview: async (params: { window_image: string; fabric_image: string; mode: string; sub_type: string; style_prompt?: string }) => {
+    try {
+      const res = await fetch(`${API_BASE}/ai/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify(params),
+        mode: 'cors'
+      });
+      return await handleResponse(res);
+    } catch (err) {
+      console.error("AI Preview Error:", err);
       throw err;
     }
   }
