@@ -1,216 +1,405 @@
-
-import React, { useState, useEffect, useRef } from 'react';
-import { dataService } from '../services/dataService';
-import { WindowEntry, OrderStatus, Order } from '../types';
-import { SHOWROOMS, STITCH_TYPES, LINING_TYPES, TAILORS, FITTERS, BRAND_COLORS } from '../constants';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback
+} from "react";
+import { dataService } from "../services/dataService";
+import { WindowEntry, OrderStatus } from "../types";
+import {
+  SHOWROOMS,
+  STITCH_TYPES,
+  LINING_TYPES,
+  TAILORS,
+  FITTERS
+} from "../constants";
 
 interface CalculatorProps {
   orderId: string | null;
   onSave: () => void;
 }
 
+/* ================= IMAGE COMPRESSION ================= */
+
 const compressImage = (base64Str: string, maxWidth = 1200): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.src = base64Str;
+
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
+      const canvas = document.createElement("canvas");
+      let { width, height } = img;
+
       if (width > maxWidth) {
         height = (maxWidth / width) * height;
         width = maxWidth;
       }
+
       canvas.width = width;
       canvas.height = height;
-      const ctx = canvas.getContext('2d');
+
+      const ctx = canvas.getContext("2d");
       ctx?.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
+
+      resolve(canvas.toDataURL("image/jpeg", 0.7));
     };
+
     img.onerror = () => resolve(base64Str);
   });
 };
 
-export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
+/* ================= COMPONENT ================= */
+
+export const Calculator: React.FC<CalculatorProps> = ({
+  orderId,
+  onSave
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [customer, setCustomer] = useState({
-    name: '',
-    phone: '',
-    address: '',
+    name: "",
+    phone: "",
+    address: "",
     showroom: SHOWROOMS[0],
     status: OrderStatus.FABRIC_PENDING,
-    due_date: '',
-    tailor: TAILORS[0], // Defaults to 'None'
-    fitter: FITTERS[0]   // Defaults to 'None'
+    due_date: "",
+    tailor: TAILORS[0],
+    fitter: FITTERS[0]
   });
 
   const [entries, setEntries] = useState<WindowEntry[]>([]);
-  const [currentEntry, setCurrentEntry] = useState<Partial<WindowEntry>>({
-    window_name: '',
-    stitch_type: STITCH_TYPES[0],
-    lining_type: LINING_TYPES[0],
-    width: 0,
-    height: 0,
-    notes: '',
-    images: [],
-    is_double_layer: false
-  });
-  
   const [isEditWindow, setIsEditWindow] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
 
-  useEffect(() => {
-    if (orderId) {
-      setLoading(true);
-      dataService.getOrderById(orderId).then(order => {
-        if (order) {
-          setCustomer({
-            name: order.customer_name,
-            phone: order.phone,
-            address: order.address,
-            showroom: order.showroom,
-            status: order.status,
-            due_date: order.due_date,
-            tailor: order.tailor || TAILORS[0],
-            fitter: order.fitter || FITTERS[0]
-          });
-          setEntries(order.entries);
-        }
-        setLoading(false);
-      });
-    }
-  }, [orderId]);
-
-  const calculateMetrics = (stitch: string, w: number, h: number, isDouble: boolean) => {
-    let panels = 0;
-    if (stitch === 'Pleated') panels = Math.round(w / 18);
-    else if (stitch === 'Ripple') panels = Math.round(w / 20);
-    else if (stitch === 'Eyelet') panels = Math.round(w / 24);
-    else panels = 1;
-    
-    if (isDouble && !stitch.includes('Roman') && !stitch.includes('Blinds')) {
-      panels *= 2;
-    }
-
-    const hf = (h + 14) / 39;
-    const quantity = parseFloat((panels * hf).toFixed(2));
-    
-    let sqft = 0;
-    if (stitch.includes('Roman') || stitch.includes('Blinds')) {
-      sqft = parseFloat(((Math.ceil(w / 12 * 2) / 2) * (Math.ceil(h / 12 * 2) / 2)).toFixed(2));
-      if (isDouble) sqft *= 2;
-    }
-    
-    let track = 0;
-    if (!stitch.includes('Roman') && !stitch.includes('Blinds')) {
-      track = Math.ceil((w / 12) * 2) / 2;
-      if (isDouble) track *= 2;
-    }
-    return { panels, quantity, sqft, track };
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    setUploading(true);
-    const uploadedImages: string[] = [];
-    for (const file of Array.from(files) as File[]) {
-      const reader = new FileReader();
-      const promise = new Promise<string>((resolve) => {
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = () => resolve('');
-      });
-      reader.readAsDataURL(file);
-      const rawBase64 = await promise;
-      if (rawBase64) {
-        const compressed = await compressImage(rawBase64);
-        uploadedImages.push(compressed);
-      }
-    }
-    setCurrentEntry(prev => ({
-      ...prev,
-      images: [...(prev.images || []), ...uploadedImages]
-    }));
-    setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const removeImage = (index: number) => {
-    setCurrentEntry(prev => ({
-      ...prev,
-      images: (prev.images || []).filter((_, i) => i !== index)
-    }));
-  };
-
-  const addOrUpdateWindow = () => {
-    const { panels, quantity, sqft, track } = calculateMetrics(
-      currentEntry.stitch_type || STITCH_TYPES[0],
-      currentEntry.width || 0,
-      currentEntry.height || 0,
-      !!currentEntry.is_double_layer
-    );
-    const windowId = currentEntry.window_id || Math.random().toString(36).substr(2, 9);
-    const newEntry: WindowEntry = {
-      window_id: windowId,
-      window_name: currentEntry.window_name || 'Window',
-      stitch_type: currentEntry.stitch_type || STITCH_TYPES[0],
-      lining_type: currentEntry.lining_type || LINING_TYPES[0],
-      width: currentEntry.width || 0,
-      height: currentEntry.height || 0,
-      notes: currentEntry.notes || '',
-      images: currentEntry.images || [],
-      is_double_layer: !!currentEntry.is_double_layer,
-      panels,
-      quantity,
-      sqft,
-      track
-    } as WindowEntry;
-    if (isEditWindow !== null) {
-      const newEntries = [...entries];
-      newEntries[isEditWindow] = newEntry;
-      setEntries(newEntries);
-      setIsEditWindow(null);
-    } else {
-      setEntries([...entries, newEntry]);
-    }
-    setCurrentEntry({
-      window_name: '',
+  const [currentEntry, setCurrentEntry] =
+    useState<Partial<WindowEntry>>({
+      window_name: "",
       stitch_type: STITCH_TYPES[0],
       lining_type: LINING_TYPES[0],
       width: 0,
       height: 0,
-      notes: '',
+      notes: "",
       images: [],
       is_double_layer: false
     });
-  };
 
-  const handleSaveOrder = async () => {
+  const [payments, setPayments] = useState<
+    { amount: number; date: string; method: string }[]
+  >([]);
+
+  const [totalBill, setTotalBill] = useState(0);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [newPayment, setNewPayment] = useState({
+    amount: 0,
+    date: new Date().toISOString().split("T")[0],
+    method: "UPI"
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  /* ================= SINGLE FETCH ================= */
+
+  useEffect(() => {
+    if (!orderId) return;
+
+    let mounted = true;
+
+    setLoading(true);
+
+    dataService.getOrderById(orderId).then((order) => {
+      if (!mounted) return;
+
+      if (order) {
+        setCustomer({
+          name: order.customer_name,
+          phone: order.phone,
+          address: order.address,
+          showroom: order.showroom,
+          status: order.status,
+          due_date: order.due_date,
+          tailor: order.tailor || TAILORS[0],
+          fitter: order.fitter || FITTERS[0]
+        });
+
+        setEntries(order.entries || []);
+        setPayments(order.payments || []);
+        setTotalBill(order.total_bill || 0);
+      }
+
+      setLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [orderId]);
+
+  /* ================= MEMO VALUES ================= */
+
+  const paidAmount = useMemo(
+    () =>
+      payments.reduce(
+        (sum, p) => sum + (Number(p.amount) || 0),
+        0
+      ),
+    [payments]
+  );
+
+  const balanceAmount = useMemo(
+    () => totalBill - paidAmount,
+    [totalBill, paidAmount]
+  );
+
+  const totalFabric = useMemo(
+    () =>
+      entries.reduce((sum, e) => sum + e.quantity, 0),
+    [entries]
+  );
+
+  /* ================= METRICS ================= */
+
+  const calculateMetrics = useCallback(
+    (stitch: string, w: number, h: number, isDouble: boolean) => {
+      let panels = 0;
+
+      if (stitch === "Pleated") panels = Math.round(w / 18);
+      else if (stitch === "Ripple")
+        panels = Math.round(w / 20);
+      else if (stitch === "Eyelet")
+        panels = Math.round(w / 24);
+      else panels = 1;
+
+      if (
+        isDouble &&
+        !stitch.includes("Roman") &&
+        !stitch.includes("Blinds")
+      ) {
+        panels *= 2;
+      }
+
+      const hf = (h + 14) / 39;
+      const quantity = parseFloat(
+        (panels * hf).toFixed(2)
+      );
+
+      let sqft = 0;
+      if (
+        stitch.includes("Roman") ||
+        stitch.includes("Blinds")
+      ) {
+        sqft = parseFloat(
+          (
+            (Math.ceil((w / 12) * 2) / 2) *
+            (Math.ceil((h / 12) * 2) / 2)
+          ).toFixed(2)
+        );
+
+        if (isDouble) sqft *= 2;
+      }
+
+      let track = 0;
+      if (
+        !stitch.includes("Roman") &&
+        !stitch.includes("Blinds")
+      ) {
+        track = Math.ceil((w / 12) * 2) / 2;
+        if (isDouble) track *= 2;
+      }
+
+      return { panels, quantity, sqft, track };
+    },
+    []
+  );
+
+  /* ================= FAST IMAGE UPLOAD ================= */
+
+  const handleImageUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
+
+      setUploading(true);
+
+      const base64Promises = Array.from(files).map(
+        (file) =>
+          new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(reader.result as string);
+            reader.onerror = () => resolve("");
+            reader.readAsDataURL(file);
+          })
+      );
+
+      const rawImages =
+        await Promise.all(base64Promises);
+
+      const compressed =
+        await Promise.all(
+          rawImages
+            .filter(Boolean)
+            .map((img) => compressImage(img))
+        );
+
+      setCurrentEntry((prev) => ({
+        ...prev,
+        images: [
+          ...(prev.images || []),
+          ...compressed
+        ]
+      }));
+
+      setUploading(false);
+      if (fileInputRef.current)
+        fileInputRef.current.value = "";
+    },
+    []
+  );
+
+  const removeImage = useCallback(
+    (index: number) => {
+      setCurrentEntry((prev) => ({
+        ...prev,
+        images: (prev.images || []).filter(
+          (_, i) => i !== index
+        )
+      }));
+    },
+    []
+  );
+
+  /* ================= ADD / UPDATE ================= */
+
+  const addOrUpdateWindow = useCallback(() => {
+    const { panels, quantity, sqft, track } =
+      calculateMetrics(
+        currentEntry.stitch_type ||
+          STITCH_TYPES[0],
+        currentEntry.width || 0,
+        currentEntry.height || 0,
+        !!currentEntry.is_double_layer
+      );
+
+    const windowId =
+      currentEntry.window_id ||
+      (crypto?.randomUUID?.() ||
+        Math.random().toString(36));
+
+    const newEntry: WindowEntry = {
+      window_id: windowId,
+      window_name:
+        currentEntry.window_name || "Window",
+      stitch_type:
+        currentEntry.stitch_type ||
+        STITCH_TYPES[0],
+      lining_type:
+        currentEntry.lining_type ||
+        LINING_TYPES[0],
+      width: currentEntry.width || 0,
+      height: currentEntry.height || 0,
+      notes: currentEntry.notes || "",
+      images: currentEntry.images || [],
+      is_double_layer:
+        !!currentEntry.is_double_layer,
+      panels,
+      quantity,
+      sqft,
+      track
+    };
+
+    setEntries((prev) =>
+      isEditWindow !== null
+        ? prev.map((e, i) =>
+            i === isEditWindow ? newEntry : e
+          )
+        : [...prev, newEntry]
+    );
+
+    setIsEditWindow(null);
+
+    setCurrentEntry({
+      window_name: "",
+      stitch_type: STITCH_TYPES[0],
+      lining_type: LINING_TYPES[0],
+      width: 0,
+      height: 0,
+      notes: "",
+      images: [],
+      is_double_layer: false
+    });
+  }, [
+    currentEntry,
+    isEditWindow,
+    calculateMetrics
+  ]);
+
+  /* ================= SAVE ================= */
+
+  const handleSaveOrder = useCallback(async () => {
     if (!customer.name || !customer.phone) {
-      alert("Please enter customer name and phone");
+      alert(
+        "Please enter customer name and phone"
+      );
       return;
     }
+
     setLoading(true);
+
     try {
-      await dataService.saveOrder({ 
-        customer_name: customer.name,
-        phone: customer.phone,
-        address: customer.address,
-        showroom: customer.showroom,
-        status: customer.status,
-        due_date: customer.due_date,
-        tailor: customer.tailor,
-        fitter: customer.fitter,
-        order_id: orderId || undefined 
-      }, entries);
+      await dataService.saveOrder(
+        {
+          customer_name: customer.name,
+          phone: customer.phone,
+          address: customer.address,
+          showroom: customer.showroom,
+          status: customer.status,
+          due_date: customer.due_date,
+          tailor: customer.tailor,
+          fitter: customer.fitter,
+          payments,
+          total_bill: totalBill,
+          order_id: orderId || undefined
+        },
+        entries
+      );
+
       onSave();
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    customer,
+    payments,
+    totalBill,
+    orderId,
+    entries,
+    onSave
+  ]);
+
+  const handleAddPayment = useCallback(() => {
+  if (newPayment.amount <= 0) {
+    alert("Enter valid amount");
+    return;
+  }
+
+  setPayments(prev => [...prev, newPayment]);
+
+  setShowPaymentForm(false);
+
+  setNewPayment({
+    amount: 0,
+    date: new Date().toISOString().split("T")[0],
+    method: "UPI"
+  });
+
+}, [newPayment]);
+
+  /* ================= RETURN ================= */
+  /* KEEP YOUR ORIGINAL JSX BELOW THIS LINE */
+ 
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-10 pb-24 relative">
@@ -321,7 +510,70 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
             {isEditWindow !== null ? 'UPDATE SPECIFICATION' : 'ADD UNIT TO PROJECT'}
           </button>
         </section>
+          {/* --- PAYMENT SECTION --- */}
+<section className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] shadow-sm border border-slate-50">
+  <h3 className="text-lg md:text-xl font-black mb-6 md:mb-8 text-[#002d62] flex items-center gap-4">
+    <span className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-green-600 text-white flex items-center justify-center text-xs">03</span>
+    Financial Overview
+  </h3>
 
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div className="bg-slate-50 p-6 rounded-2xl">
+      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Bill Value</p>
+      <input 
+        type="number" 
+        value={totalBill} 
+        onChange={(e) => setTotalBill(Number(e.target.value))}
+        className="text-2xl font-black text-[#002d62] bg-transparent border-b-2 border-slate-200 focus:border-[#c5a059] outline-none w-full"
+      />
+    </div>
+    <div className="bg-slate-50 p-6 rounded-2xl">
+      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Paid Amount</p>
+      <p className="text-2xl font-black text-green-600">₹{paidAmount.toLocaleString()}</p>
+    </div>
+    <div className="bg-slate-50 p-6 rounded-2xl">
+      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Balance Due</p>
+      <p className={`text-2xl font-black ${balanceAmount > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+        ₹{balanceAmount.toLocaleString()}
+      </p>
+    </div>
+  </div>
+
+  <div className="space-y-4">
+    {payments.map((p, idx) => (
+      <div key={idx} className="flex justify-between items-center p-4 bg-white border border-slate-100 rounded-xl shadow-sm">
+        <div>
+          <p className="text-sm font-black text-[#002d62]">₹{p.amount}</p>
+          <p className="text-[10px] text-slate-400 font-bold uppercase">{p.method} • {p.date}</p>
+        </div>
+        <button onClick={() => setPayments(payments.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600">
+          <i className="fas fa-trash-alt"></i>
+        </button>
+      </div>
+    ))}
+
+    {!showPaymentForm ? (
+      <button 
+        onClick={() => setShowPaymentForm(true)}
+        className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-black text-[10px] uppercase tracking-widest hover:border-[#002d62] hover:text-[#002d62] transition-all"
+      >
+        + Record New Payment
+      </button>
+    ) : (
+      <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4 animate-in fade-in slide-in-from-top-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Input label="Amount" type="number" value={newPayment.amount} onChange={v => setNewPayment({...newPayment, amount: Number(v)})} />
+          <Input label="Payment Date" type="date" value={newPayment.date} onChange={v => setNewPayment({...newPayment, date: v})} />
+          <Select label="Method" options={['UPI', 'Cash', 'Bank Transfer', 'Card']} value={newPayment.method} onChange={v => setNewPayment({...newPayment, method: v})} />
+        </div>
+        <div className="flex gap-3">
+          <button onClick={handleAddPayment} className="flex-1 py-3 bg-[#002d62] text-white rounded-xl font-black text-[10px] uppercase tracking-widest">Confirm Payment</button>
+          <button onClick={() => setShowPaymentForm(false)} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black text-[10px] uppercase tracking-widest">Cancel</button>
+        </div>
+      </div>
+    )}
+  </div>
+</section>
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-50 overflow-x-auto">
           <table className="w-full text-sm text-left min-w-[700px]">
             <thead className="bg-slate-50/50 text-[#002d62] uppercase text-[9px] font-black tracking-widest border-b border-slate-100">
@@ -457,7 +709,7 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
             <tr className="bg-slate-900 text-white">
               <td colSpan={3} className="p-4 text-[10px] font-black uppercase tracking-[0.2em] text-right">Project Total Fabric Required</td>
               <td className="p-4 text-right font-black text-xl">
-                {entries.reduce((sum, e) => sum + e.quantity, 0).toFixed(2)} M
+                {totalFabric.toFixed(2)} M M
               </td>
             </tr>
           </tfoot>
@@ -487,27 +739,45 @@ export const Calculator: React.FC<CalculatorProps> = ({ orderId, onSave }) => {
   );
 };
 
-const Input: React.FC<{ label: string; value: any; onChange: (v: string) => void; type?: string }> = ({ label, value, onChange, type = 'text' }) => (
+const Input = React.memo(({ label, value, onChange, type = 'text' }: any) => (
   <div className="space-y-2">
-    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{label}</label>
-    <input 
-      type={type} 
-      value={value} 
-      onChange={(e) => onChange(e.target.value)} 
-      className="w-full px-5 py-3.5 bg-slate-50 border border-slate-100 rounded-xl focus:border-[#c5a059] focus:bg-white outline-none text-sm font-bold transition-all" 
+    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+      {label}
+    </label>
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-5 py-3.5 bg-slate-50 border border-slate-100 rounded-xl focus:border-[#c5a059] focus:bg-white outline-none text-sm font-bold transition-all"
     />
   </div>
-);
+));
 
-const Select: React.FC<{ label: string; value: string; options: string[]; onChange: (v: string) => void }> = ({ label, value, options, onChange }) => (
+const Select = React.memo(({ label, value, options, onChange }: any) => (
   <div className="space-y-2">
-    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">{label}</label>
-    <select 
-      value={value || options[0]} 
-      onChange={(e) => onChange(e.target.value)} 
+    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+      {label}
+    </label>
+    <select
+      value={value || options[0]}
+      onChange={(e) => onChange(e.target.value)}
       className="w-full px-5 py-3.5 bg-slate-50 border border-slate-100 rounded-xl text-sm font-black text-[#002d62] cursor-pointer outline-none focus:border-[#c5a059] transition-all"
     >
-      {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+      {options.map((opt: string) => (
+        <option key={opt} value={opt}>{opt}</option>
+      ))}
     </select>
   </div>
-);
+));
+
+const WindowRow = React.memo(({ e, idx, onEdit }: any) => (
+  <tr>
+    <td>{e.window_name}</td>
+    <td>{e.quantity.toFixed(2)} M</td>
+    <td>
+      <button onClick={() => onEdit(idx)}>
+        Edit
+      </button>
+    </td>
+  </tr>
+));

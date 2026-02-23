@@ -1,7 +1,7 @@
 
 import { Order, OrderStatus, OrderBilling, WindowEntry } from '../types';
 
-const BASE_URL = 'https://fabric-calc-5uhi.onrender.com';
+const BASE_URL = 'http://localhost:5000'; // Change this to your backend URL or use environment variable
 const API_BASE = `${BASE_URL}/api`;
 
 const getAuthHeader = () => {
@@ -70,11 +70,13 @@ const sanitizeImages = (images: any): string[] => {
   return images.map(formatImageSource).filter(img => img.length > 0);
 };
 
+// ================= REPLACE mapBackendOrder in dataService.ts =================
 const mapBackendOrder = (o: any): Order => {
   const id = o.order_id || o._id || o.id || Math.random().toString();
+
   return {
     order_id: String(id),
-    customer_name: o.name || (o.customer && o.customer.name) || o.customer_name || 'Client Name Unavailable',
+    customer_name: o.customer_name || o.name || (o.customer && o.customer.name) || 'Client Name Unavailable',
     phone: o.phone || (o.customer && o.customer.phone) || '',
     address: o.address || (o.customer && o.customer.address) || '',
     showroom: o.showroom || (o.customer && o.customer.showroom) || 'Main Showroom',
@@ -83,21 +85,34 @@ const mapBackendOrder = (o: any): Order => {
     tailor: o.tailor || '',
     fitter: o.fitter || '',
     created_at: o.created_at || new Date().toISOString(),
-    entries: Array.isArray(o.entries) ? o.entries.map((e: any) => ({
-      window_id: e.window_id || e._id || Math.random().toString(36).substr(2, 9),
-      window_name: e.Window || e.window_name || 'Window',
-      stitch_type: e.Stitch || e.stitch_type || 'Pleated',
-      lining_type: e.Lining || e.lining_type || 'No Lining',
-      width: parseFloat(e.Width || e.width) || 0,
-      height: parseFloat(e.Height || e.height) || 0,
-      panels: parseInt(e.Panels || e.panels) || 0,
-      quantity: parseFloat(e.Quantity || e.quantity) || 0,
-      track: parseFloat(e.Track || e.track) || 0,
-      sqft: parseFloat(e.SQFT || e.sqft) || 0,
-      notes: e.Notes || e.notes || '',
-      images: sanitizeImages(e.Images || e.images),
-      is_double_layer: !!(e.IsDouble || e.is_double_layer)
-    })) : []
+
+    payments: Array.isArray(o.payments)
+      ? o.payments.map((p: any) => ({
+          amount: Number(p.amount) || 0,
+          date: p.date || '',
+          method: p.method || ''
+        }))
+      : [],
+
+    total_bill: Number(o.total_bill) || 0,
+
+    entries: Array.isArray(o.entries)
+      ? o.entries.map((e: any) => ({
+          window_id: e.window_id || Math.random().toString(36).substr(2, 9),
+          window_name: e.Window || e.window_name || 'Unit',
+          stitch_type: e.Stitch || e.stitch_type || 'Pleated',
+          lining_type: e.Lining || e.lining_type || 'None',
+          width: Number(e.Width || e.width || 0),
+          height: Number(e.Height || e.height || 0),
+          panels: Number(e.Panels || e.panels || 0),
+          quantity: Number(e.Quantity || e.quantity || 0),
+          sqft: Number(e.SQFT || e.sqft || 0),
+          track: Number(e.Track || e.track || 0),
+          notes: e.Notes || e.notes || '',
+          images: e.Images ? sanitizeImages(e.Images) : (e.images ? sanitizeImages(e.images) : []),
+          is_double_layer: !!(e.IsDouble || e.is_double_layer)
+        }))
+      : []
   };
 };
 
@@ -128,29 +143,40 @@ export const dataService = {
     localStorage.removeItem('qd_user');
   },
 
-  getOrders: async (): Promise<Order[]> => {
+  getOrders: async (search?: string): Promise<Order[]> => {
     try {
-      const res = await fetch(`${API_BASE}/orders/list`, {
-        headers: { ...getAuthHeader() },
+      // We append the search query to the URL
+      const url = search 
+        ? `${API_BASE}/orders/list?search=${encodeURIComponent(search)}` 
+        : `${API_BASE}/orders/list`;
+
+      const res = await fetch(url, {
+        headers: { 
+          'Authorization': `Bearer ${localStorage.getItem('qd_token')}` 
+        },
         mode: 'cors'
       });
+      
       const data = await handleResponse(res);
-      let rawOrders: any[] = Array.isArray(data) ? data : (data.orders || data.data || []);
+      const rawOrders = Array.isArray(data) ? data : (data.orders || data.data || []);
       return rawOrders.map(mapBackendOrder);
     } catch (err) {
       console.error("Order Fetch Error:", err);
-      return [];
+      throw err;
     }
   },
 
   getKPIs: async () => {
     try {
       const res = await fetch(`${API_BASE}/dashboard/kpis`, {
-        headers: { ...getAuthHeader() },
+        headers: { 
+          'Authorization': `Bearer ${localStorage.getItem('qd_token')}` 
+        },
         mode: 'cors'
       });
       return await handleResponse(res);
     } catch (err) {
+      console.error("KPI Fetch Error:", err);
       return { orders: 0, fabric_pending: 0, stitching: 0, installation: 0, completed: 0 };
     }
   },
@@ -174,31 +200,14 @@ export const dataService = {
     const url = isUpdate ? `${API_BASE}/orders/${order.order_id}` : `${API_BASE}/orders`;
     const method = isUpdate ? 'PUT' : 'POST';
     const payload = {
-      customer: {
-        name: order.customer_name,
-        phone: order.phone,
-        address: order.address,
-        showroom: order.showroom
-      },
-      status: order.status,
-      due_date: order.due_date,
-      tailor: order.tailor,
-      fitter: order.fitter,
-      entries: entries.map(e => ({
-        window_id: e.window_id,
-        Window: e.window_name,
-        Stitch: e.stitch_type,
-        Lining: e.lining_type,
-        Width: e.width,
-        Height: e.height,
-        Panels: e.panels,
-        Quantity: e.quantity,
-        Track: e.track,
-        SQFT: e.sqft,
-        Notes: e.notes,
-        Images: e.images,
-        IsDouble: e.is_double_layer
-      }))
+      ...order, // Use spread to get status, due_date, etc.
+      customer_name: order.customer_name,
+      phone: order.phone,
+      address: order.address,
+      showroom: order.showroom,
+      payments: order.payments || [],
+      total_bill: order.total_bill || 0,
+      entries: entries // Send this once, not nested inside a customer object
     };
     const res = await fetch(url, {
       method,
