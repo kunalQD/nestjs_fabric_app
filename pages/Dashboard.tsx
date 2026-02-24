@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import useSWR from 'swr';
 import { dataService } from '../services/dataService';
 import { Order } from '../types';
@@ -9,83 +9,140 @@ interface DashboardProps {
   onAuthError?: () => void;
 }
 
-// Sub-component for individual table rows
-const OrderRow = React.memo(({ order, onEdit }: { order: Order; onEdit: (id: string) => void }) => {
-  const formattedDate = order.due_date
-    ? new Date(order.due_date).toLocaleDateString('en-IN')
-    : 'TBD';
+/* ---------------- ORDER ROW ---------------- */
+const OrderRow = React.memo(
+  ({ order, onEdit }: { order: Order; onEdit: (id: string) => void }) => {
+    const formattedDate = order.due_date
+      ? new Date(order.due_date).toLocaleDateString('en-IN')
+      : 'TBD';
 
-  return (
-    <tr className="hover:bg-slate-50/50 transition-colors border-b border-slate-50">
-      <td className="px-6 py-4 font-black text-slate-800">{order.customer_name}</td>
-      <td className="px-6 py-4 text-slate-500 font-bold">{order.showroom}</td>
-      <td className="px-6 py-4">
-        <span className={`px-2 py-1 rounded-full text-[8px] font-black uppercase text-white ${STATUS_COLORS[order.status]}`}>
-          {order.status}
-        </span>
-      </td>
-      <td className="px-6 py-4 font-bold text-slate-700">{formattedDate}</td>
-      <td className="px-6 py-4 text-right">
-        <button
-          onClick={() => onEdit(order.order_id)}
-          className="p-2 bg-[#002d62] text-white rounded-lg hover:bg-black transition-all"
-        >
-          <i className="fas fa-arrow-right text-[10px]"></i>
-        </button>
-      </td>
-    </tr>
-  );
-});
+    return (
+      <tr className="hover:bg-slate-50/50 transition-colors border-b border-slate-50">
+        <td className="px-6 py-4 font-black text-slate-800">
+          {order.customer_name}
+        </td>
+        <td className="px-6 py-4 text-slate-500 font-bold">
+          {order.showroom}
+        </td>
+        <td className="px-6 py-4">
+          <span
+            className={`px-2 py-1 rounded-full text-[8px] font-black uppercase text-white ${STATUS_COLORS[order.status]}`}
+          >
+            {order.status}
+          </span>
+        </td>
+        <td className="px-6 py-4 font-bold text-slate-700">
+          {formattedDate}
+        </td>
+        <td className="px-6 py-4 text-right">
+          <button
+            onClick={() => onEdit(order.order_id)}
+            className="p-2 bg-[#002d62] text-white rounded-lg hover:bg-black transition-all"
+          >
+            <i className="fas fa-arrow-right text-[10px]"></i>
+          </button>
+        </td>
+      </tr>
+    );
+  }
+);
 
-// Sub-component for KPI Statistics
-const KPICard = React.memo(({ title, value, color }: { title: string; value: number; color: string }) => (
-  <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-50">
-    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{title}</p>
-    <h3 className="text-2xl font-black" style={{ color: value > 0 ? color : '#cbd5e1' }}>
-      {value}
-    </h3>
-  </div>
-));
+/* ---------------- KPI CARD ---------------- */
+const KPICard = React.memo(
+  ({ title, value, color }: { title: string; value: number; color: string }) => (
+    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-50">
+      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+        {title}
+      </p>
+      <h3
+        className="text-2xl font-black"
+        style={{ color: value > 0 ? color : '#cbd5e1' }}
+      >
+        {value}
+      </h3>
+    </div>
+  )
+);
 
-export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }) => {
+export const Dashboard: React.FC<DashboardProps> = ({
+  onEditOrder,
+  onAuthError
+}) => {
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
+
+  /* Debounce */
   const [debouncedSearch, setDebouncedSearch] = useState('');
-
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(deferredSearch);
+    }, 300);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [deferredSearch]);
 
-  const { data: orders, error: orderError, mutate: refreshOrders, isValidating: isSyncing } = useSWR(
-    ['orders-list', debouncedSearch], 
+  /* Orders Fetch */
+  const {
+    data: orders,
+    error: orderError,
+    mutate: refreshOrders,
+    isValidating: isSyncing
+  } = useSWR(
+    ['orders-list', debouncedSearch],
     () => dataService.getOrders(debouncedSearch),
     {
       revalidateOnFocus: false,
-      dedupingInterval: 3000,
+      dedupingInterval: 10000,
+      keepPreviousData: true,
       onError: (err) => {
-        if (err.message === 'AUTH_REQUIRED' && onAuthError) onAuthError();
+        if (err.message === 'AUTH_REQUIRED' && onAuthError) {
+          onAuthError();
+        }
       }
     }
   );
 
-  const { data: kpis } = useSWR('kpi-stats', () => dataService.getKPIs());
+  /* KPI Fetch (less frequent) */
+  const { data: kpis } = useSWR(
+    'kpi-stats',
+    dataService.getKPIs,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 30000
+    }
+  );
 
-  if (!orders && !orderError) {
+  /* Memoized rows */
+  const renderedRows = useMemo(() => {
+    if (!orders || orders.length === 0) return null;
+    return orders.map(order => (
+      <OrderRow
+        key={order.order_id}
+        order={order}
+        onEdit={onEditOrder}
+      />
+    ));
+  }, [orders, onEditOrder]);
+
+  /* Error State */
+  if (orderError) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-[#002d62] border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Syncing Production...</p>
-        </div>
+        <p className="text-red-500 font-bold text-sm">
+          Failed to load dashboard data.
+        </p>
       </div>
     );
   }
 
   return (
     <div className="p-4 md:p-8 max-w-[1700px] mx-auto space-y-6 md:space-y-8">
+
+      {/* HEADER */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-slate-100">
         <div>
-          <h2 className="text-2xl md:text-3xl font-black text-[#002d62]">Operations Command</h2>
+          <h2 className="text-2xl md:text-3xl font-black text-[#002d62]">
+            Operations Command
+          </h2>
           <p className="text-slate-400 font-bold uppercase tracking-widest text-[8px] md:text-[9px] mt-1">
             Active production: Anna Nagar & Valasaravakkam
           </p>
@@ -105,13 +162,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
 
           <button
             onClick={() => refreshOrders()}
-            className={`flex w-10 h-10 bg-slate-100 hover:bg-slate-200 rounded-xl items-center justify-center transition-all ${isSyncing ? 'animate-pulse' : ''}`}
+            className={`flex w-10 h-10 bg-slate-100 hover:bg-slate-200 rounded-xl items-center justify-center transition-all ${
+              isSyncing ? 'animate-pulse' : ''
+            }`}
           >
-            <i className={`fas fa-sync-alt text-slate-400 text-xs ${isSyncing ? 'fa-spin' : ''}`}></i>
+            <i
+              className={`fas fa-sync-alt text-slate-400 text-xs ${
+                isSyncing ? 'fa-spin' : ''
+              }`}
+            ></i>
           </button>
         </div>
       </div>
 
+      {/* KPI CARDS */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
         <KPICard title="Portfolio" value={kpis?.orders || 0} color="#002d62" />
         <KPICard title="Fabric" value={kpis?.fabric_pending || 0} color="#d97706" />
@@ -120,6 +184,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
         <KPICard title="Fulfilled" value={kpis?.completed || 0} color="#059669" />
       </div>
 
+      {/* TABLE */}
       <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs min-w-[700px]">
@@ -133,15 +198,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
               </tr>
             </thead>
             <tbody>
-              {orders && orders.length > 0 ? (
-                orders.map(order => (
-                  <OrderRow key={order.order_id} order={order} onEdit={onEditOrder} />
-                ))
+              {renderedRows ? (
+                renderedRows
               ) : (
                 <tr>
                   <td colSpan={5} className="py-20 text-center">
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      {isSyncing ? "Searching..." : "No active orders matching this search"}
+                      {isSyncing
+                        ? "Searching..."
+                        : "No active orders matching this search"}
                     </p>
                   </td>
                 </tr>
@@ -149,11 +214,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
             </tbody>
           </table>
         </div>
-        
+
         <div className="bg-slate-50/50 p-4 text-center border-t border-slate-50">
-           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-             Showing latest 15 active orders. Use search for Name/Phone to find older records.
-           </p>
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
+            Showing latest 15 active orders. Use search for Name/Phone to find older records.
+          </p>
         </div>
       </div>
     </div>
