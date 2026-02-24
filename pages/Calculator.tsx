@@ -1,14 +1,10 @@
-import React,
-{
+import React, {
   useState,
   useEffect,
   useRef,
   useMemo,
-  useCallback,
-  lazy,
-  Suspense
+  useCallback
 } from "react";
-
 import { dataService } from "../services/dataService";
 import { WindowEntry, OrderStatus } from "../types";
 import {
@@ -18,10 +14,6 @@ import {
   TAILORS,
   FITTERS
 } from "../constants";
-
-/* ================= LAZY PRINT COMPONENT ================= */
-
-const PrintLayout = lazy(() => import("./PrintLayout"));
 
 interface CalculatorProps {
   orderId: string | null;
@@ -57,13 +49,13 @@ const compressImage = (base64Str: string, maxWidth = 1200): Promise<string> => {
   });
 };
 
+/* ================= COMPONENT ================= */
+
 export const Calculator: React.FC<CalculatorProps> = ({
   orderId,
   onSave
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [showPrint, setShowPrint] = useState(false);
 
   const [customer, setCustomer] = useState({
     name: "",
@@ -96,15 +88,23 @@ export const Calculator: React.FC<CalculatorProps> = ({
   >([]);
 
   const [totalBill, setTotalBill] = useState(0);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [newPayment, setNewPayment] = useState({
+    amount: 0,
+    date: new Date().toISOString().split("T")[0],
+    method: "UPI"
+  });
+
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  /* ================= FETCH ================= */
+  /* ================= SINGLE FETCH ================= */
 
   useEffect(() => {
     if (!orderId) return;
 
     let mounted = true;
+
     setLoading(true);
 
     dataService.getOrderById(orderId).then((order) => {
@@ -138,7 +138,11 @@ export const Calculator: React.FC<CalculatorProps> = ({
   /* ================= MEMO VALUES ================= */
 
   const paidAmount = useMemo(
-    () => payments.reduce((s, p) => s + (Number(p.amount) || 0), 0),
+    () =>
+      payments.reduce(
+        (sum, p) => sum + (Number(p.amount) || 0),
+        0
+      ),
     [payments]
   );
 
@@ -148,15 +152,195 @@ export const Calculator: React.FC<CalculatorProps> = ({
   );
 
   const totalFabric = useMemo(
-    () => entries.reduce((sum, e) => sum + e.quantity, 0),
+    () =>
+      entries.reduce((sum, e) => sum + e.quantity, 0),
     [entries]
   );
+
+  /* ================= METRICS ================= */
+
+  const calculateMetrics = useCallback(
+    (stitch: string, w: number, h: number, isDouble: boolean) => {
+      let panels = 0;
+
+      if (stitch === "Pleated") panels = Math.round(w / 18);
+      else if (stitch === "Ripple")
+        panels = Math.round(w / 20);
+      else if (stitch === "Eyelet")
+        panels = Math.round(w / 24);
+      else panels = 1;
+
+      if (
+        isDouble &&
+        !stitch.includes("Roman") &&
+        !stitch.includes("Blinds")
+      ) {
+        panels *= 2;
+      }
+
+      const hf = (h + 14) / 39;
+      const quantity = parseFloat(
+        (panels * hf).toFixed(2)
+      );
+
+      let sqft = 0;
+      if (
+        stitch.includes("Roman") ||
+        stitch.includes("Blinds")
+      ) {
+        sqft = parseFloat(
+          (
+            (Math.ceil((w / 12) * 2) / 2) *
+            (Math.ceil((h / 12) * 2) / 2)
+          ).toFixed(2)
+        );
+
+        if (isDouble) sqft *= 2;
+      }
+
+      let track = 0;
+      if (
+        !stitch.includes("Roman") &&
+        !stitch.includes("Blinds")
+      ) {
+        track = Math.ceil((w / 12) * 2) / 2;
+        if (isDouble) track *= 2;
+      }
+
+      return { panels, quantity, sqft, track };
+    },
+    []
+  );
+
+  /* ================= FAST IMAGE UPLOAD ================= */
+
+  const handleImageUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
+
+      setUploading(true);
+
+      const base64Promises = Array.from(files).map(
+        (file) =>
+          new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(reader.result as string);
+            reader.onerror = () => resolve("");
+            reader.readAsDataURL(file);
+          })
+      );
+
+      const rawImages =
+        await Promise.all(base64Promises);
+
+      const compressed =
+        await Promise.all(
+          rawImages
+            .filter(Boolean)
+            .map((img) => compressImage(img))
+        );
+
+      setCurrentEntry((prev) => ({
+        ...prev,
+        images: [
+          ...(prev.images || []),
+          ...compressed
+        ]
+      }));
+
+      setUploading(false);
+      if (fileInputRef.current)
+        fileInputRef.current.value = "";
+    },
+    []
+  );
+
+  const removeImage = useCallback(
+    (index: number) => {
+      setCurrentEntry((prev) => ({
+        ...prev,
+        images: (prev.images || []).filter(
+          (_, i) => i !== index
+        )
+      }));
+    },
+    []
+  );
+
+  /* ================= ADD / UPDATE ================= */
+
+  const addOrUpdateWindow = useCallback(() => {
+    const { panels, quantity, sqft, track } =
+      calculateMetrics(
+        currentEntry.stitch_type ||
+          STITCH_TYPES[0],
+        currentEntry.width || 0,
+        currentEntry.height || 0,
+        !!currentEntry.is_double_layer
+      );
+
+    const windowId =
+      currentEntry.window_id ||
+      (crypto?.randomUUID?.() ||
+        Math.random().toString(36));
+
+    const newEntry: WindowEntry = {
+      window_id: windowId,
+      window_name:
+        currentEntry.window_name || "Window",
+      stitch_type:
+        currentEntry.stitch_type ||
+        STITCH_TYPES[0],
+      lining_type:
+        currentEntry.lining_type ||
+        LINING_TYPES[0],
+      width: currentEntry.width || 0,
+      height: currentEntry.height || 0,
+      notes: currentEntry.notes || "",
+      images: currentEntry.images || [],
+      is_double_layer:
+        !!currentEntry.is_double_layer,
+      panels,
+      quantity,
+      sqft,
+      track
+    };
+
+    setEntries((prev) =>
+      isEditWindow !== null
+        ? prev.map((e, i) =>
+            i === isEditWindow ? newEntry : e
+          )
+        : [...prev, newEntry]
+    );
+
+    setIsEditWindow(null);
+
+    setCurrentEntry({
+      window_name: "",
+      stitch_type: STITCH_TYPES[0],
+      lining_type: LINING_TYPES[0],
+      width: 0,
+      height: 0,
+      notes: "",
+      images: [],
+      is_double_layer: false
+    });
+  }, [
+    currentEntry,
+    isEditWindow,
+    calculateMetrics
+  ]);
 
   /* ================= SAVE ================= */
 
   const handleSaveOrder = useCallback(async () => {
     if (!customer.name || !customer.phone) {
-      alert("Please enter customer name and phone");
+      alert(
+        "Please enter customer name and phone"
+      );
       return;
     }
 
@@ -186,99 +370,414 @@ export const Calculator: React.FC<CalculatorProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [customer, payments, totalBill, orderId, entries, onSave]);
+  }, [
+    customer,
+    payments,
+    totalBill,
+    orderId,
+    entries,
+    onSave
+  ]);
 
-  /* ================= ENTRY TABLE MEMO ================= */
+  const handleAddPayment = useCallback(() => {
+  if (newPayment.amount <= 0) {
+    alert("Enter valid amount");
+    return;
+  }
 
-  const renderedEntries = useMemo(() => {
-    if (entries.length === 0) {
-      return (
-        <tr>
-          <td colSpan={4} className="px-10 py-20 text-center">
-            <p className="text-slate-300 font-black uppercase text-[10px] tracking-widest">
-              No units registered for this project
-            </p>
-          </td>
-        </tr>
-      );
-    }
+  setPayments(prev => [...prev, newPayment]);
 
-    return entries.map((e, idx) => (
-      <tr key={e.window_id || idx}>
-        <td className="px-6 md:px-10 py-6 font-black">
-          {e.window_name}
-        </td>
-        <td className="px-6 md:px-10 py-6 text-center">
-          {e.width}" x {e.height}"
-        </td>
-        <td className="px-6 md:px-10 py-6 text-center">
-          {e.quantity.toFixed(2)} M
-        </td>
-        <td className="px-6 md:px-10 py-6 text-right">
-          <button
-            onClick={() => {
-              setCurrentEntry({ ...entries[idx] });
-              setIsEditWindow(idx);
-            }}
-            className="text-sm text-[#002d62]"
-          >
-            Edit
-          </button>
-        </td>
-      </tr>
-    ));
-  }, [entries]);
+  setShowPaymentForm(false);
+
+  setNewPayment({
+    amount: 0,
+    date: new Date().toISOString().split("T")[0],
+    method: "UPI"
+  });
+
+}, [newPayment]);
 
   /* ================= RETURN ================= */
+  /* KEEP YOUR ORIGINAL JSX BELOW THIS LINE */
+ 
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 md:space-y-10 pb-24 relative">
+      <div className="no-print space-y-6 md:space-y-10">
+        <div className="flex flex-col gap-6 border-b border-slate-100 pb-8">
+          <div className="flex justify-between items-start">
+            <div>
+              <h2 className="text-3xl md:text-4xl font-black text-[#002d62] brand-font mb-1">Project Studio</h2>
+              <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] md:text-[10px]">Technical Project Specification</p>
+            </div>
+            <button 
+              disabled={loading}
+              onClick={handleSaveOrder}
+              className="md:hidden px-6 py-3 bg-[#002d62] text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg flex items-center gap-2"
+            >
+              {loading ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-check"></i>}
+              SAVE
+            </button>
+          </div>
+          <div className="flex flex-col md:flex-row gap-3">
+            <button 
+              onClick={() => window.print()}
+              className="w-full md:w-auto px-6 py-4 bg-white text-[#002d62] border border-slate-200 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-sm hover:bg-slate-50 transition-colors"
+            >
+              <i className="fas fa-file-pdf"></i> Generate Job Sheet
+            </button>
+            <button 
+              disabled={loading}
+              onClick={handleSaveOrder}
+              className="hidden md:flex flex-1 md:flex-none px-10 py-4 bg-[#002d62] text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-2xl items-center justify-center hover:bg-black transition-all"
+            >
+              {loading ? 'Processing Cloud Sync...' : 'Authorize Project'}
+            </button>
+          </div>
+        </div>
 
-      {/* SAVE + PRINT */}
-      <div className="flex gap-4 mb-6">
-        <button
-          onClick={handleSaveOrder}
-          disabled={loading}
-          className="px-6 py-3 bg-[#002d62] text-white rounded-xl"
-        >
-          {loading ? "Saving..." : "Save"}
-        </button>
+        <section className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] shadow-sm border border-slate-50">
+          <h3 className="text-lg md:text-xl font-black mb-6 md:mb-8 text-[#002d62] flex items-center gap-4">
+            <span className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-[#002d62] text-white flex items-center justify-center text-xs">01</span>
+            Core Identity
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-8">
+            <Input label="Client Name" value={customer.name} onChange={v => setCustomer({...customer, name: v})} />
+            <Input label="Phone" value={customer.phone} onChange={v => setCustomer({...customer, phone: v})} />
+            <Input label="Site Address" value={customer.address} onChange={v => setCustomer({...customer, address: v})} />
+            <Select label="Showroom" options={SHOWROOMS} value={customer.showroom} onChange={v => setCustomer({...customer, showroom: v})} />
+            <Select label="Stage" options={Object.values(OrderStatus)} value={customer.status} onChange={v => setCustomer({...customer, status: v as OrderStatus})} />
+            <Input type="date" label="Deadline" value={customer.due_date} onChange={v => setCustomer({...customer, due_date: v})} />
+            <Select label="Tailor" options={TAILORS} value={customer.tailor} onChange={v => setCustomer({...customer, tailor: v})} />
+            <Select label="Fitter" options={FITTERS} value={customer.fitter} onChange={v => setCustomer({...customer, fitter: v})} />
+          </div>
+        </section>
 
-        <button
-          onClick={() => setShowPrint(true)}
-          className="px-6 py-3 border border-[#002d62] rounded-xl"
-        >
-          Generate Job Sheet
+        <section className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] shadow-sm border border-slate-50">
+          <h3 className="text-lg md:text-xl font-black mb-6 md:mb-8 text-[#002d62] flex items-center gap-4">
+            <span className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-[#c5a059] text-white flex items-center justify-center text-xs">02</span>
+            Unit Parameters
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-5 md:gap-8 mb-8">
+            <div className="md:col-span-2">
+              <Input label="Unit Name (e.g. Master Bedroom)" value={currentEntry.window_name || ''} onChange={v => setCurrentEntry({...currentEntry, window_name: v})} />
+            </div>
+            <Select label="Stitch Type" options={STITCH_TYPES} value={currentEntry.stitch_type || STITCH_TYPES[0]} onChange={v => setCurrentEntry({...currentEntry, stitch_type: v})} />
+            <Select label="Lining Type" options={LINING_TYPES} value={currentEntry.lining_type || LINING_TYPES[0]} onChange={v => setCurrentEntry({...currentEntry, lining_type: v})} />
+            <Input type="number" label="Width (Inches)" value={currentEntry.width || 0} onChange={v => setCurrentEntry({...currentEntry, width: parseFloat(v) || 0})} />
+            <Input type="number" label="Height (Inches)" value={currentEntry.height || 0} onChange={v => setCurrentEntry({...currentEntry, height: parseFloat(v) || 0})} />
+            
+            <div className="md:col-span-1 flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 h-[58px] mt-6">
+              <input 
+                type="checkbox" 
+                id="double-layer" 
+                checked={currentEntry.is_double_layer || false}
+                onChange={(e) => setCurrentEntry({...currentEntry, is_double_layer: e.target.checked})}
+                className="w-5 h-5 accent-[#c5a059]"
+              />
+              <label htmlFor="double-layer" className="text-[10px] font-black text-[#002d62] uppercase tracking-widest cursor-pointer">
+                Double Layer / Day-Night
+              </label>
+            </div>
+
+            <div className="md:col-span-2">
+              <Input label="Execution Notes" value={currentEntry.notes || ''} onChange={v => setCurrentEntry({...currentEntry, notes: v})} />
+            </div>
+          </div>
+          <div className="mb-8 p-6 md:p-8 bg-slate-50 rounded-[1.5rem] md:rounded-[2.5rem] border-2 border-dashed border-slate-100">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4">Site Visuals</p>
+            <div className="flex flex-wrap gap-4 md:gap-6">
+              {currentEntry.images?.map((img, idx) => (
+                <div key={idx} className="relative w-24 h-24 md:w-32 md:h-32 group animate-in zoom-in duration-300">
+                  <div className="w-full h-full rounded-xl md:rounded-2xl overflow-hidden border-2 md:border-4 border-white shadow-lg bg-white">
+                    <img src={img} className="w-full h-full object-cover" loading="lazy" />
+                  </div>
+                  <button onClick={() => removeImage(idx)} className="absolute -top-2 -right-2 w-7 h-7 md:w-8 md:h-8 bg-red-500 text-white rounded-full shadow-lg flex items-center justify-center text-[10px] hover:bg-black transition-colors">
+                    <i className="fas fa-times"></i>
+                  </button>
+                </div>
+              ))}
+              <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="w-24 h-24 md:w-32 md:h-32 rounded-xl md:rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 text-slate-300 hover:text-[#002d62] hover:border-[#002d62] transition-all bg-white group">
+                {uploading ? <div className="w-6 h-6 border-3 border-[#002d62] border-t-transparent rounded-full animate-spin"></div> : <><i className="fas fa-camera text-xl md:text-2xl group-hover:scale-110 transition-transform"></i><span className="text-[8px] font-black uppercase">Attach</span></>}
+              </button>
+              <input type="file" ref={fileInputRef} className="hidden" multiple accept="image/*" onChange={handleImageUpload} />
+            </div>
+          </div>
+          <button 
+            onClick={addOrUpdateWindow} 
+            className={`w-full py-4 md:py-5 rounded-xl md:rounded-2xl font-black text-[10px] md:text-[11px] tracking-widest transition-all shadow-xl ${isEditWindow !== null ? 'bg-[#c5a059] text-white hover:bg-[#a38345]' : 'bg-[#002d62] text-white hover:bg-black'}`}
+          >
+            {isEditWindow !== null ? 'UPDATE SPECIFICATION' : 'ADD UNIT TO PROJECT'}
+          </button>
+        </section>
+          {/* --- PAYMENT SECTION --- */}
+<section className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] shadow-sm border border-slate-50">
+  <h3 className="text-lg md:text-xl font-black mb-6 md:mb-8 text-[#002d62] flex items-center gap-4">
+    <span className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-green-600 text-white flex items-center justify-center text-xs">03</span>
+    Financial Overview
+  </h3>
+
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div className="bg-slate-50 p-6 rounded-2xl">
+      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Bill Value</p>
+      <input 
+        type="number" 
+        value={totalBill} 
+        onChange={(e) => setTotalBill(Number(e.target.value))}
+        className="text-2xl font-black text-[#002d62] bg-transparent border-b-2 border-slate-200 focus:border-[#c5a059] outline-none w-full"
+      />
+    </div>
+    <div className="bg-slate-50 p-6 rounded-2xl">
+      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Paid Amount</p>
+      <p className="text-2xl font-black text-green-600">₹{paidAmount.toLocaleString()}</p>
+    </div>
+    <div className="bg-slate-50 p-6 rounded-2xl">
+      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Balance Due</p>
+      <p className={`text-2xl font-black ${balanceAmount > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+        ₹{balanceAmount.toLocaleString()}
+      </p>
+    </div>
+  </div>
+
+  <div className="space-y-4">
+    {payments.map((p, idx) => (
+      <div key={idx} className="flex justify-between items-center p-4 bg-white border border-slate-100 rounded-xl shadow-sm">
+        <div>
+          <p className="text-sm font-black text-[#002d62]">₹{p.amount}</p>
+          <p className="text-[10px] text-slate-400 font-bold uppercase">{p.method} • {p.date}</p>
+        </div>
+        <button onClick={() => setPayments(payments.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600">
+          <i className="fas fa-trash-alt"></i>
         </button>
       </div>
+    ))}
 
-      {/* TABLE */}
-      <div className="bg-white border rounded-xl overflow-x-auto">
-        <table className="w-full text-left min-w-[600px]">
+    {!showPaymentForm ? (
+      <button 
+        onClick={() => setShowPaymentForm(true)}
+        className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-black text-[10px] uppercase tracking-widest hover:border-[#002d62] hover:text-[#002d62] transition-all"
+      >
+        + Record New Payment
+      </button>
+    ) : (
+      <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4 animate-in fade-in slide-in-from-top-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Input label="Amount" type="number" value={newPayment.amount} onChange={v => setNewPayment({...newPayment, amount: Number(v)})} />
+          <Input label="Payment Date" type="date" value={newPayment.date} onChange={v => setNewPayment({...newPayment, date: v})} />
+          <Select label="Method" options={['UPI', 'Cash', 'Bank Transfer', 'Card']} value={newPayment.method} onChange={v => setNewPayment({...newPayment, method: v})} />
+        </div>
+        <div className="flex gap-3">
+          <button onClick={handleAddPayment} className="flex-1 py-3 bg-[#002d62] text-white rounded-xl font-black text-[10px] uppercase tracking-widest">Confirm Payment</button>
+          <button onClick={() => setShowPaymentForm(false)} className="px-6 py-3 bg-white border border-slate-200 text-slate-400 rounded-xl font-black text-[10px] uppercase tracking-widest">Cancel</button>
+        </div>
+      </div>
+    )}
+  </div>
+</section>
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-50 overflow-x-auto">
+          <table className="w-full text-sm text-left min-w-[700px]">
+            <thead className="bg-slate-50/50 text-[#002d62] uppercase text-[9px] font-black tracking-widest border-b border-slate-100">
+              <tr>
+                <th className="px-6 md:px-10 py-5">Identity</th>
+                <th className="px-6 md:px-10 py-5 text-center">Dimensions</th>
+                <th className="px-6 md:px-10 py-5 text-center">Fabric Required</th>
+                <th className="px-6 md:px-10 py-5 text-right">Edit</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {entries.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-10 py-20 text-center">
+                    <p className="text-slate-300 font-black uppercase text-[10px] tracking-widest">No units registered for this project</p>
+                  </td>
+                </tr>
+              ) : entries.map((e, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 md:px-10 py-6">
+                    <div className="font-black text-slate-800 text-base">
+                      {e.window_name} {e.is_double_layer ? <span className="text-[8px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full ml-2 border border-amber-100 font-black">2 LAYERS</span> : ''}
+                    </div>
+                    <div className="text-[9px] text-[#c5a059] font-black uppercase tracking-widest">{e.stitch_type} • {e.lining_type}</div>
+                  </td>
+                  <td className="px-6 md:px-10 py-6 text-center">
+                    <div className="font-black text-slate-700">{e.width}" x {e.height}"</div>
+                    <div className="text-[8px] text-slate-400 font-bold uppercase">
+                      {e.stitch_type.toLowerCase().includes('blind') || e.stitch_type.toLowerCase().includes('roman') 
+                        ? `${e.sqft} Sqft` 
+                        : `${e.panels} Panels`}
+                    </div>
+                  </td>
+                  <td className="px-6 md:px-10 py-6 text-center font-mono font-black text-[#002d62] text-lg">{e.quantity.toFixed(2)} M</td>
+                  <td className="px-6 md:px-10 py-6 text-right">
+                    <button 
+                      onClick={() => { setCurrentEntry({...entries[idx]}); setIsEditWindow(idx); }} 
+                      className="w-10 h-10 bg-slate-100 text-slate-400 rounded-xl hover:bg-[#002d62] hover:text-white transition-all flex items-center justify-center mx-auto mr-0"
+                    >
+                      <i className="fas fa-pen text-[10px]"></i>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="only-print bg-white p-12 min-h-screen font-sans text-slate-900">
+        <div className="flex justify-between items-start mb-12 border-b-8 border-[#002d62] pb-10">
+          <div>
+            <h1 className="text-5xl font-black text-[#002d62] tracking-tighter mb-1">QUILT & DRAPES</h1>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em]">Fabrication Work Order</p>
+          </div>
+          <div className="text-right">
+            <h2 className="text-3xl font-black text-[#c5a059] mb-1">JOB SHEET</h2>
+            <p className="text-xs font-bold text-slate-500">{new Date().toLocaleDateString('en-GB')}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-12 mb-12 bg-slate-50 p-8 rounded-[2rem] border border-slate-100">
+          <div>
+            <p className="text-[10px] font-black text-[#c5a059] uppercase tracking-widest mb-4">Production Context</p>
+            <p className="text-3xl font-black text-slate-900 mb-2">{customer.name || 'N/A'}</p>
+            <p className="text-sm font-bold text-slate-500">{customer.phone}</p>
+            <p className="text-sm text-slate-400 mt-2 italic">{customer.address}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Showroom</p>
+              <p className="text-sm font-black text-slate-800">{customer.showroom}</p>
+            </div>
+            <div>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Target Date</p>
+              <p className="text-sm font-black text-slate-800">{customer.due_date || 'TBD'}</p>
+            </div>
+            <div>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Master Tailor</p>
+              <p className="text-sm font-black text-slate-800">{customer.tailor || 'Unassigned'}</p>
+            </div>
+            <div>
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Site Fitter</p>
+              <p className="text-sm font-black text-slate-800">{customer.fitter || 'Unassigned'}</p>
+            </div>
+          </div>
+        </div>
+
+        <table className="w-full mb-12 border border-slate-200 rounded-xl overflow-hidden">
           <thead>
-            <tr className="bg-slate-50">
-              <th className="px-6 py-4">Window</th>
-              <th className="px-6 py-4 text-center">Size</th>
-              <th className="px-6 py-4 text-center">Fabric</th>
-              <th className="px-6 py-4 text-right">Edit</th>
+            <tr className="bg-[#002d62] text-white">
+              <th className="p-4 text-left text-[10px] font-black uppercase tracking-widest">Window Unit</th>
+              <th className="p-4 text-center text-[10px] font-black uppercase tracking-widest">Dimensions (W x H)</th>
+              <th className="p-4 text-center text-[10px] font-black uppercase tracking-widest">Specs</th>
+              <th className="p-4 text-right text-[10px] font-black uppercase tracking-widest">Fabric (M)</th>
             </tr>
           </thead>
-          <tbody>{renderedEntries}</tbody>
+          <tbody className="divide-y divide-slate-100">
+            {entries.map((e, idx) => (
+              <React.Fragment key={idx}>
+                <tr className="bg-white">
+                  <td className="p-4 font-black text-slate-800">
+                    {e.window_name} {e.is_double_layer ? '(Double Layer)' : ''}
+                  </td>
+                  <td className="p-4 text-center font-bold text-slate-600">{e.width}" x {e.height}"</td>
+                  <td className="p-4 text-center text-xs text-slate-500 font-bold uppercase">
+                    {e.stitch_type}<br/>{e.lining_type}
+                  </td>
+                  <td className="p-4 text-right font-black text-[#002d62]">{e.quantity.toFixed(2)} M</td>
+                </tr>
+                {e.notes && (
+                  <tr className="bg-slate-50/50">
+                    <td colSpan={4} className="p-4 text-[10px] text-slate-400 font-bold italic">
+                      Note: {e.notes}
+                    </td>
+                  </tr>
+                )}
+                {e.images && e.images.length > 0 && (
+                  <tr className="bg-white">
+                    <td colSpan={4} className="p-4">
+                      <div className="flex gap-4">
+                        {e.images.slice(0, 3).map((img, i) => (
+                          <img key={i} src={img} className="w-24 h-24 object-cover rounded-lg border border-slate-200" />
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-slate-900 text-white">
+              <td colSpan={3} className="p-4 text-[10px] font-black uppercase tracking-[0.2em] text-right">Project Total Fabric Required</td>
+              <td className="p-4 text-right font-black text-xl">
+                {totalFabric.toFixed(2)} M M
+              </td>
+            </tr>
+          </tfoot>
         </table>
+
+        <div className="mt-auto border-t border-slate-100 pt-8 flex justify-between">
+          <p className="text-[9px] text-slate-400 uppercase font-black">Authorized by Quilt & Drapes Production Control</p>
+          <div className="flex gap-12">
+            <div className="w-32 border-b border-slate-300 h-10 flex items-end justify-center text-[8px] font-black text-slate-300 uppercase">Supervisor</div>
+            <div className="w-32 border-b border-slate-300 h-10 flex items-end justify-center text-[8px] font-black text-slate-300 uppercase">Quality Check</div>
+          </div>
+        </div>
       </div>
 
-      {/* ================= LAZY PRINT ================= */}
-
-      {showPrint && (
-        <Suspense fallback={<div className="p-10 text-center">Preparing Print Layout...</div>}>
-          <PrintLayout
-            customer={customer}
-            entries={entries}
-            totalFabric={totalFabric}
-            onClose={() => setShowPrint(false)}
-          />
-        </Suspense>
-      )}
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .only-print { display: block !important; visibility: visible !important; }
+          body { background: white !important; margin: 0; padding: 0; }
+          html, body { height: 100%; }
+        }
+        @media screen {
+          .only-print { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 };
+
+const Input = React.memo(({ label, value, onChange, type = 'text' }: any) => (
+  <div className="space-y-2">
+    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+      {label}
+    </label>
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-5 py-3.5 bg-slate-50 border border-slate-100 rounded-xl focus:border-[#c5a059] focus:bg-white outline-none text-sm font-bold transition-all"
+    />
+  </div>
+));
+
+const Select = React.memo(({ label, value, options, onChange }: any) => (
+  <div className="space-y-2">
+    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+      {label}
+    </label>
+    <select
+      value={value || options[0]}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-5 py-3.5 bg-slate-50 border border-slate-100 rounded-xl text-sm font-black text-[#002d62] cursor-pointer outline-none focus:border-[#c5a059] transition-all"
+    >
+      {options.map((opt: string) => (
+        <option key={opt} value={opt}>{opt}</option>
+      ))}
+    </select>
+  </div>
+));
+
+const WindowRow = React.memo(({ e, idx, onEdit }: any) => (
+  <tr>
+    <td>{e.window_name}</td>
+    <td>{e.quantity.toFixed(2)} M</td>
+    <td>
+      <button onClick={() => onEdit(idx)}>
+        Edit
+      </button>
+    </td>
+  </tr>
+));
