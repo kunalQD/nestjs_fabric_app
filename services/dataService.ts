@@ -70,13 +70,11 @@ const sanitizeImages = (images: any): string[] => {
   return images.map(formatImageSource).filter(img => img.length > 0);
 };
 
-// ================= REPLACE mapBackendOrder in dataService.ts =================
 const mapBackendOrder = (o: any): Order => {
   const id = o.order_id || o._id || o.id || Math.random().toString();
-
   return {
     order_id: String(id),
-    customer_name: o.customer_name || o.name || (o.customer && o.customer.name) || 'Client Name Unavailable',
+    customer_name: o.name || (o.customer && o.customer.name) || o.customer_name || 'Client Name Unavailable',
     phone: o.phone || (o.customer && o.customer.phone) || '',
     address: o.address || (o.customer && o.customer.address) || '',
     showroom: o.showroom || (o.customer && o.customer.showroom) || 'Main Showroom',
@@ -169,14 +167,11 @@ export const dataService = {
   getKPIs: async () => {
     try {
       const res = await fetch(`${API_BASE}/dashboard/kpis`, {
-        headers: { 
-          'Authorization': `Bearer ${localStorage.getItem('qd_token')}` 
-        },
+        headers: { ...getAuthHeader() },
         mode: 'cors'
       });
       return await handleResponse(res);
     } catch (err) {
-      console.error("KPI Fetch Error:", err);
       return { orders: 0, fabric_pending: 0, stitching: 0, installation: 0, completed: 0 };
     }
   },
@@ -227,9 +222,14 @@ export const dataService = {
     await handleResponse(res);
   },
 
-  getBillingData: async (): Promise<OrderBilling[]> => {
+  getBillingData: async (startDate?: string, endDate?: string): Promise<OrderBilling[]> => {
     try {
-      const res = await fetch(`${API_BASE}/billing`, {
+      let url = `${API_BASE}/billing`;
+      if (startDate && endDate) {
+        url += `?start_date=${startDate}&end_date=${endDate}`;
+      }
+      
+      const res = await fetch(url, {
         headers: { ...getAuthHeader() },
         mode: 'cors'
       });
@@ -245,6 +245,7 @@ export const dataService = {
         stitching_total: Number(b.stitching_total) || 0,
         fitting_total: Number(b.fitting_total) || 0,
         grand_total: Number(b.grand_total) || 0,
+        total_bill: Number(b.total_bill) || 0,
         payment_status: b.payment_status || 'Pending',
         stitching_breakup: Array.isArray(b.stitching_breakup) ? b.stitching_breakup.map((i: any) => ({
           type: i.type || 'Window Allocation',
@@ -253,12 +254,24 @@ export const dataService = {
           rate: i.rate || 0,
           amount: i.amount || 0
         })) : [],
-        fitting_breakup: Array.isArray(b.fitting_breakup) ? b.fitting_breakup : []
+        fitting_breakup: Array.isArray(b.fitting_breakup) ? b.fitting_breakup : [],
+        payments: Array.isArray(b.payments) ? b.payments : [],
+        paid_total: Number(b.paid_total) || 0
       }));
     } catch (err) {
       console.error("Billing Fetch Error:", err);
       throw err;
     }
+  },
+
+  updatePaymentStatus: async (orderId: string, status: 'Paid' | 'Pending'): Promise<void> => {
+    const res = await fetch(`${API_BASE}/billing/${orderId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ payment_status: status }),
+      mode: 'cors'
+    });
+    await handleResponse(res);
   },
 
   generateAIPreview: async (params: { window_image: string; fabric_image: string; mode: string; sub_type: string; style_prompt?: string }) => {

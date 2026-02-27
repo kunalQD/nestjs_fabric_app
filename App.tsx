@@ -4,6 +4,7 @@ import { Navbar } from './components/Navbar';
 import { Dashboard } from './pages/Dashboard';
 import { Calculator } from './pages/Calculator';
 import { Billing } from './pages/Billing';
+import { Settlements } from './pages/Settlements';
 import { Calendar } from './pages/Calendar';
 import { Visualizer } from './pages/Visualizer';
 import { Login } from './pages/Login';
@@ -12,7 +13,7 @@ import { dataService } from './services/dataService';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<{ username: string; role: UserRole } | null>(null);
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'calculator' | 'billing' | 'calendar' | 'visualizer'>('dashboard');
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'calculator' | 'billing' | 'settlements' | 'calendar' | 'visualizer'>('dashboard');
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,6 +73,9 @@ const App: React.FC = () => {
         )}
         {currentPage === 'billing' && user.role === UserRole.ADMIN && (
           <Billing />
+        )}
+        {currentPage === 'settlements' && user.role === UserRole.ADMIN && (
+          <Settlements />
         )}
         {currentPage === 'calendar' && (
           <Calendar />

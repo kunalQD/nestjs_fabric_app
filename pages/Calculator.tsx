@@ -14,6 +14,8 @@ import {
   TAILORS,
   FITTERS
 } from "../constants";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface CalculatorProps {
   orderId: string | null;
@@ -222,7 +224,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       setUploading(true);
 
       const base64Promises = Array.from(files).map(
-        (file) =>
+        (file: File) =>
           new Promise<string>((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () =>
@@ -397,6 +399,84 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
 }, [newPayment]);
 
+  const handleDownloadReceipt = useCallback((paymentIndex: number) => {
+    const doc = new jsPDF();
+    const currentPayment = payments[paymentIndex];
+    
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(0, 45, 98); // #002d62
+    doc.text("QUILT & DRAPES", 105, 20, { align: "center" });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("PAYMENT RECEIPT", 105, 28, { align: "center" });
+    
+    // Divider
+    doc.setDrawColor(197, 160, 89); // #c5a059
+    doc.setLineWidth(1);
+    doc.line(20, 35, 190, 35);
+    
+    // Customer Details
+    doc.setFontSize(12);
+    doc.setTextColor(0);
+    doc.text(`Customer: ${customer.name || 'N/A'}`, 20, 45);
+    doc.text(`Phone: ${customer.phone || 'N/A'}`, 20, 52);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 190, 45, { align: "right" });
+    
+    // Payment Info
+    doc.setFontSize(14);
+    doc.text("Current Payment", 20, 65);
+    
+    autoTable(doc, {
+      startY: 70,
+      head: [["Date", "Method", "Amount"]],
+      body: [[currentPayment.date, currentPayment.method, `INR ${currentPayment.amount.toLocaleString()}`]],
+      theme: "striped",
+      headStyles: { fillColor: [0, 45, 98] }
+    });
+
+    // All Payments History
+    const historyY = (doc as any).lastAutoTable.finalY + 10;
+    doc.setFontSize(14);
+    doc.text("Payment History", 20, historyY);
+
+    autoTable(doc, {
+      startY: historyY + 5,
+      head: [["Date", "Method", "Amount"]],
+      body: payments.map(p => [p.date, p.method, `INR ${p.amount.toLocaleString()}`]),
+      theme: "grid",
+      headStyles: { fillColor: [100, 100, 100] },
+      styles: { fontSize: 9 }
+    });
+    
+    // Financial Summary
+    const finalY = (doc as any).lastAutoTable.finalY + 10;
+    doc.setFontSize(12);
+    doc.text("Financial Summary", 20, finalY);
+    
+    autoTable(doc, {
+      startY: finalY + 5,
+      body: [
+        ["Total Bill Value", `INR ${totalBill.toLocaleString()}`],
+        ["Total Paid Amount", `INR ${paidAmount.toLocaleString()}`],
+        ["Balance Due", `INR ${balanceAmount.toLocaleString()}`]
+      ],
+      theme: "plain",
+      styles: { fontSize: 11, cellPadding: 2 },
+      columnStyles: { 0: { fontStyle: "bold" }, 1: { halign: "right" } }
+    });
+    
+    // Footer
+    const footerY = (doc as any).lastAutoTable.finalY + 20;
+    doc.setFontSize(10);
+    doc.setTextColor(150);
+    doc.text("Thank you for your business!", 105, footerY, { align: "center" });
+    doc.text("This is a computer generated receipt.", 105, footerY + 5, { align: "center" });
+    
+    doc.save(`Receipt_${customer.name}_${currentPayment.date}.pdf`);
+  }, [customer, payments, totalBill, paidAmount, balanceAmount]);
+
   /* ================= RETURN ================= */
   /* KEEP YOUR ORIGINAL JSX BELOW THIS LINE */
  
@@ -546,9 +626,18 @@ export const Calculator: React.FC<CalculatorProps> = ({
           <p className="text-sm font-black text-[#002d62]">₹{p.amount}</p>
           <p className="text-[10px] text-slate-400 font-bold uppercase">{p.method} • {p.date}</p>
         </div>
-        <button onClick={() => setPayments(payments.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600">
-          <i className="fas fa-trash-alt"></i>
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => handleDownloadReceipt(idx)}
+            className="w-10 h-10 bg-slate-100 text-[#002d62] rounded-xl hover:bg-[#002d62] hover:text-white transition-all flex items-center justify-center"
+            title="Download Receipt"
+          >
+            <i className="fas fa-download text-[10px]"></i>
+          </button>
+          <button onClick={() => setPayments(payments.filter((_, i) => i !== idx))} className="w-10 h-10 bg-slate-100 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all flex items-center justify-center">
+            <i className="fas fa-trash-alt text-[10px]"></i>
+          </button>
+        </div>
       </div>
     ))}
 

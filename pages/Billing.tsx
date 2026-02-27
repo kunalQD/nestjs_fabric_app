@@ -4,14 +4,20 @@ import { dataService } from '../services/dataService';
 import { OrderBilling, BillingLineItem } from '../types';
 
 export const Billing: React.FC = () => {
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+
   const [billingData, setBillingData] = useState<OrderBilling[]>([]);
   const [selectedBill, setSelectedBill] = useState<OrderBilling | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState(firstDay);
+  const [endDate, setEndDate] = useState(lastDay);
 
   const fetchBilling = () => {
     setLoading(true);
-    dataService.getBillingData()
+    dataService.getBillingData(startDate, endDate)
       .then(data => {
         setBillingData(data);
         setError(null);
@@ -25,10 +31,23 @@ export const Billing: React.FC = () => {
 
   useEffect(() => {
     fetchBilling();
-  }, []);
+  }, [startDate, endDate]);
 
   const handlePrintInvoice = () => {
     window.print();
+  };
+
+  const handleMarkAsPaid = async (orderId: string) => {
+    try {
+      await dataService.updatePaymentStatus(orderId, 'Paid');
+      fetchBilling();
+      if (selectedBill && selectedBill.order_id === orderId) {
+        setSelectedBill({ ...selectedBill, payment_status: 'Paid' });
+      }
+    } catch (err) {
+      console.error("Error updating payment status:", err);
+      setError("Failed to update settlement status.");
+    }
   };
 
   const totals = {
@@ -60,12 +79,32 @@ export const Billing: React.FC = () => {
             <h2 className="text-3xl md:text-4xl font-black text-[#002d62] brand-font mb-2">Financial Ledger</h2>
             <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] md:text-[10px]">Accounts receivable audit & settlement</p>
           </div>
-          <button 
-            onClick={fetchBilling}
-            className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-          >
-            <i className="fas fa-sync-alt mr-2"></i> Refresh Ledger
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">From</label>
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-[#002d62] outline-none focus:border-[#002d62]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">To</label>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-[#002d62] outline-none focus:border-[#002d62]"
+              />
+            </div>
+            <button 
+              onClick={fetchBilling}
+              className="px-6 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all mt-auto"
+            >
+              <i className="fas fa-sync-alt mr-2"></i> Refresh
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
@@ -111,9 +150,19 @@ export const Billing: React.FC = () => {
                         ₹{bill.grand_total.toLocaleString('en-IN')}
                       </td>
                       <td className="px-6 md:px-10 py-6 text-center">
-                        <span className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest ${bill.payment_status === 'Paid' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100'}`}>
-                          {bill.payment_status}
-                        </span>
+                        <div className="flex flex-col items-center gap-2">
+                          <span className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest ${bill.payment_status === 'Paid' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100'}`}>
+                            {bill.payment_status}
+                          </span>
+                          {bill.payment_status === 'Pending' && (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleMarkAsPaid(bill.order_id); }}
+                              className="text-[9px] font-black text-emerald-600 hover:text-emerald-700 hover:underline uppercase tracking-tighter transition-colors"
+                            >
+                              Mark as Paid
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 md:px-10 py-6 text-right">
                         <button 
@@ -209,7 +258,15 @@ export const Billing: React.FC = () => {
             </div>
 
             {/* Footer Actions */}
-            <div className="p-10 bg-[#fcfcfc] flex gap-4">
+            <div className="p-10 bg-[#fcfcfc] flex flex-col md:flex-row gap-4">
+              {selectedBill.payment_status === 'Pending' && (
+                <button 
+                  onClick={() => handleMarkAsPaid(selectedBill.order_id)}
+                  className="flex-1 py-5 bg-emerald-600 text-white rounded-[1.5rem] font-black text-[11px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-xl flex items-center justify-center gap-2"
+                >
+                  <i className="fas fa-check-circle"></i> Mark as Paid
+                </button>
+              )}
               <button 
                 onClick={handlePrintInvoice}
                 className="flex-1 py-5 bg-[#c5a059] text-white rounded-[1.5rem] font-black text-[11px] uppercase tracking-widest hover:bg-[#a38345] transition-all shadow-xl flex items-center justify-center gap-2"

@@ -40,6 +40,8 @@ export interface Order {
   fitter: string;
   entries: WindowEntry[];
   created_at: string;
+  payments?: { amount: number; date: string; method: string }[];
+  total_bill?: number;
 }
 
 export interface BillingLineItem {
@@ -58,7 +60,10 @@ export interface OrderBilling {
   stitching_total: number;
   fitting_total: number;
   grand_total: number;
+  total_bill: number;
   payment_status: 'Paid' | 'Pending';
   stitching_breakup: BillingLineItem[];
   fitting_breakup: BillingLineItem[];
+  payments: { amount: number; date: string; method: string }[];
+  paid_total: number;
 }
