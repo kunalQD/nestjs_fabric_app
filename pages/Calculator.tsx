@@ -12,7 +12,10 @@ import {
   STITCH_TYPES,
   LINING_TYPES,
   TAILORS,
-  FITTERS
+  FITTERS,
+  MODEL_TYPES,
+  FIT_TYPES,
+  MOUNT_TYPES
 } from "../constants";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -82,7 +85,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
       height: 0,
       notes: "",
       images: [],
-      is_double_layer: false
+      is_double_layer: false,
+      model_type: MODEL_TYPES[0],
+      fit_type: FIT_TYPES[0],
+      mount_type: MOUNT_TYPES[0]
     });
 
   const [payments, setPayments] = useState<
@@ -302,8 +308,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
       height: currentEntry.height || 0,
       notes: currentEntry.notes || "",
       images: currentEntry.images || [],
-      is_double_layer:
-        !!currentEntry.is_double_layer,
+      is_double_layer: !!currentEntry.is_double_layer,
+      model_type: currentEntry.model_type || MODEL_TYPES[0],
+      fit_type: currentEntry.fit_type || FIT_TYPES[0],
+      mount_type: currentEntry.mount_type || MOUNT_TYPES[0],
       panels,
       quantity,
       sqft,
@@ -328,7 +336,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
       height: 0,
       notes: "",
       images: [],
-      is_double_layer: false
+      is_double_layer: false,
+      model_type: MODEL_TYPES[0],
+      fit_type: FIT_TYPES[0],
+      mount_type: MOUNT_TYPES[0]
     });
   }, [
     currentEntry,
@@ -477,6 +488,53 @@ export const Calculator: React.FC<CalculatorProps> = ({
     doc.save(`Receipt_${customer.name}_${currentPayment.date}.pdf`);
   }, [customer, payments, totalBill, paidAmount, balanceAmount]);
 
+  const handleDownloadFittingSheet = useCallback(() => {
+    const doc = new jsPDF();
+    
+    doc.setFontSize(22);
+    doc.setTextColor(0, 45, 98);
+    doc.text("QUILT & DRAPES", 105, 20, { align: "center" });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("FITTING JOB WORK SHEET", 105, 28, { align: "center" });
+    
+    doc.setDrawColor(197, 160, 89);
+    doc.setLineWidth(1);
+    doc.line(20, 35, 190, 35);
+    
+    doc.setFontSize(12);
+    doc.setTextColor(0);
+    doc.text(`Customer: ${customer.name || 'N/A'}`, 20, 45);
+    doc.text(`Phone: ${customer.phone || 'N/A'}`, 20, 52);
+    doc.text(`Address: ${customer.address || 'N/A'}`, 20, 59);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 190, 45, { align: "right" });
+    
+    autoTable(doc, {
+      startY: 70,
+      head: [["Unit Name", "Dimensions", "Model", "Fit", "Mount", "Layer"]],
+      body: entries.map(e => [
+        e.window_name,
+        `${e.width}" x ${e.height}"`,
+        e.model_type || 'N/A',
+        e.fit_type || 'N/A',
+        e.mount_type || 'N/A',
+        e.is_double_layer ? 'Double' : 'Single'
+      ]),
+      theme: "striped",
+      headStyles: { fillColor: [0, 45, 98] },
+      styles: { fontSize: 9 }
+    });
+    
+    const finalY = (doc as any).lastAutoTable.finalY + 20;
+    doc.setFontSize(10);
+    doc.setTextColor(150);
+    doc.text("Authorized Signature", 190, finalY + 20, { align: "right" });
+    doc.line(150, finalY + 18, 190, finalY + 18);
+    
+    doc.save(`FittingSheet_${customer.name}_${new Date().toISOString().split('T')[0]}.pdf`);
+  }, [customer, entries]);
+
   /* ================= RETURN ================= */
   /* KEEP YOUR ORIGINAL JSX BELOW THIS LINE */
  
@@ -505,6 +563,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
               className="w-full md:w-auto px-6 py-4 bg-white text-[#002d62] border border-slate-200 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-sm hover:bg-slate-50 transition-colors"
             >
               <i className="fas fa-file-pdf"></i> Generate Job Sheet
+            </button>
+            <button 
+              onClick={handleDownloadFittingSheet}
+              className="w-full md:w-auto px-6 py-4 bg-white text-emerald-600 border border-emerald-200 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-sm hover:bg-emerald-50 transition-colors"
+            >
+              <i className="fas fa-tools"></i> Fitting Work Sheet
             </button>
             <button 
               disabled={loading}
@@ -547,6 +611,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
             <Input type="number" label="Width (Inches)" value={currentEntry.width || 0} onChange={v => setCurrentEntry({...currentEntry, width: parseFloat(v) || 0})} />
             <Input type="number" label="Height (Inches)" value={currentEntry.height || 0} onChange={v => setCurrentEntry({...currentEntry, height: parseFloat(v) || 0})} />
             
+            <Select label="Model" options={MODEL_TYPES} value={currentEntry.model_type || MODEL_TYPES[0]} onChange={v => setCurrentEntry({...currentEntry, model_type: v})} />
+            <Select label="Fit" options={FIT_TYPES} value={currentEntry.fit_type || FIT_TYPES[0]} onChange={v => setCurrentEntry({...currentEntry, fit_type: v})} />
+            <Select label="Mount" options={MOUNT_TYPES} value={currentEntry.mount_type || MOUNT_TYPES[0]} onChange={v => setCurrentEntry({...currentEntry, mount_type: v})} />
+
             <div className="md:col-span-1 flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 h-[58px] mt-6">
               <input 
                 type="checkbox" 

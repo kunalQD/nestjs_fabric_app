@@ -108,7 +108,10 @@ const mapBackendOrder = (o: any): Order => {
           track: Number(e.Track || e.track || 0),
           notes: e.Notes || e.notes || '',
           images: e.Images ? sanitizeImages(e.Images) : (e.images ? sanitizeImages(e.images) : []),
-          is_double_layer: !!(e.IsDouble || e.is_double_layer)
+          is_double_layer: !!(e.IsDouble || e.is_double_layer),
+          model_type: e.model_type || '',
+          fit_type: e.fit_type || '',
+          mount_type: e.mount_type || ''
         }))
       : []
   };

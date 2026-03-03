@@ -26,6 +26,9 @@ export interface WindowEntry {
   notes: string;
   images: string[];
   is_double_layer?: boolean;
+  model_type?: string;
+  fit_type?: string;
+  mount_type?: string;
 }
 
 export interface Order {
