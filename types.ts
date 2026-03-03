@@ -29,6 +29,7 @@ export interface WindowEntry {
   model_type?: string;
   fit_type?: string;
   mount_type?: string;
+  fitting_comments?: string;
 }
 
 export interface Order {

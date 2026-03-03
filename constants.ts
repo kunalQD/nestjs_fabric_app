@@ -6,7 +6,7 @@ export const STITCH_TYPES = ['Pleated', 'Ripple', 'Eyelet', 'Roman Blinds 48"', 
 export const LINING_TYPES = ['No Lining', 'Normal Lining', 'B/O Lining'];
 export const TAILORS = ['None', 'Dev', 'Dinesh'];
 export const FITTERS = ['None', 'Dev', 'Dinesh', 'Krishna'];
-export const MODEL_TYPES = ['Track', 'Rod'];
+export const MODEL_TYPES = ['Track', 'Rod', 'Blind'];
 export const FIT_TYPES = ['Inner', 'Outer'];
 export const MOUNT_TYPES = ['Ceiling', 'Wall'];
 

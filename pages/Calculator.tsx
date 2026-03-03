@@ -88,7 +88,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
       is_double_layer: false,
       model_type: MODEL_TYPES[0],
       fit_type: FIT_TYPES[0],
-      mount_type: MOUNT_TYPES[0]
+      mount_type: MOUNT_TYPES[0],
+      fitting_comments: ""
     });
 
   const [payments, setPayments] = useState<
@@ -312,6 +313,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       model_type: currentEntry.model_type || MODEL_TYPES[0],
       fit_type: currentEntry.fit_type || FIT_TYPES[0],
       mount_type: currentEntry.mount_type || MOUNT_TYPES[0],
+      fitting_comments: currentEntry.fitting_comments || "",
       panels,
       quantity,
       sqft,
@@ -339,7 +341,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
       is_double_layer: false,
       model_type: MODEL_TYPES[0],
       fit_type: FIT_TYPES[0],
-      mount_type: MOUNT_TYPES[0]
+      mount_type: MOUNT_TYPES[0],
+      fitting_comments: ""
     });
   }, [
     currentEntry,
@@ -491,46 +494,87 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const handleDownloadFittingSheet = useCallback(() => {
     const doc = new jsPDF();
     
-    doc.setFontSize(22);
+    // Page Border
+    doc.setDrawColor(0, 45, 98);
+    doc.setLineWidth(0.5);
+    doc.rect(10, 10, 190, 277);
+
+    // Header Branding
+    doc.setFontSize(24);
     doc.setTextColor(0, 45, 98);
-    doc.text("QUILT & DRAPES", 105, 20, { align: "center" });
+    doc.setFont("helvetica", "bold");
+    doc.text("QUILT & DRAPES", 105, 25, { align: "center" });
     
     doc.setFontSize(10);
     doc.setTextColor(100);
-    doc.text("FITTING JOB WORK SHEET", 105, 28, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.text("FITTING JOB WORK SHEET", 105, 32, { align: "center" });
     
+    // Decorative Line
     doc.setDrawColor(197, 160, 89);
-    doc.setLineWidth(1);
-    doc.line(20, 35, 190, 35);
+    doc.setLineWidth(1.5);
+    doc.line(20, 38, 190, 38);
     
-    doc.setFontSize(12);
+    // Customer Info Section
+    doc.setFontSize(11);
     doc.setTextColor(0);
-    doc.text(`Customer: ${customer.name || 'N/A'}`, 20, 45);
-    doc.text(`Phone: ${customer.phone || 'N/A'}`, 20, 52);
-    doc.text(`Address: ${customer.address || 'N/A'}`, 20, 59);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, 190, 45, { align: "right" });
+    doc.setFont("helvetica", "bold");
+    doc.text("CUSTOMER DETAILS", 20, 48);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`Name: ${customer.name || 'N/A'}`, 20, 55);
+    doc.text(`Phone: ${customer.phone || 'N/A'}`, 20, 61);
+    doc.text(`Address: ${customer.address || 'N/A'}`, 20, 67);
+    doc.text(`Showroom: ${customer.showroom || 'N/A'}`, 20, 73);
+
+    // Project Info Section
+    doc.setFont("helvetica", "bold");
+    doc.text("PROJECT INFO", 130, 48);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 130, 55);
+    doc.text(`Fitter: ${customer.fitter || 'N/A'}`, 130, 61);
+    doc.text(`Status: ${customer.status || 'N/A'}`, 130, 67);
     
     autoTable(doc, {
-      startY: 70,
-      head: [["Unit Name", "Dimensions", "Model", "Fit", "Mount", "Layer"]],
+      startY: 85,
+      head: [["Unit Name", "Width", "Height", "Model", "Fit", "Mount", "Layer", "Comments"]],
       body: entries.map(e => [
         e.window_name,
-        `${e.width}" x ${e.height}"`,
+        `${e.width}"`,
+        `${e.height}"`,
         e.model_type || 'N/A',
         e.fit_type || 'N/A',
         e.mount_type || 'N/A',
-        e.is_double_layer ? 'Double' : 'Single'
+        e.is_double_layer ? 'Double' : 'Single',
+        e.fitting_comments || ''
       ]),
-      theme: "striped",
-      headStyles: { fillColor: [0, 45, 98] },
-      styles: { fontSize: 9 }
+      theme: "grid",
+      headStyles: { 
+        fillColor: [0, 45, 98],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      columnStyles: {
+        0: { fontStyle: 'bold' },
+        1: { halign: 'center' },
+        2: { halign: 'center' },
+        3: { halign: 'center' },
+        4: { halign: 'center' },
+        5: { halign: 'center' },
+        6: { halign: 'center' },
+        7: { cellWidth: 40 }
+      },
+      styles: { 
+        fontSize: 8,
+        cellPadding: 2
+      }
     });
     
-    const finalY = (doc as any).lastAutoTable.finalY + 20;
-    doc.setFontSize(10);
+    doc.setFontSize(8);
     doc.setTextColor(150);
-    doc.text("Authorized Signature", 190, finalY + 20, { align: "right" });
-    doc.line(150, finalY + 18, 190, finalY + 18);
+    doc.setFont("helvetica", "italic");
+    doc.text("Note: Please check all measurements and specifications before installation.", 105, 282, { align: "center" });
     
     doc.save(`FittingSheet_${customer.name}_${new Date().toISOString().split('T')[0]}.pdf`);
   }, [customer, entries]);
@@ -630,6 +674,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
             <div className="md:col-span-2">
               <Input label="Execution Notes" value={currentEntry.notes || ''} onChange={v => setCurrentEntry({...currentEntry, notes: v})} />
+            </div>
+            <div className="md:col-span-2">
+              <TextArea label="Fitting Comments / Track Order Details" value={currentEntry.fitting_comments || ''} onChange={v => setCurrentEntry({...currentEntry, fitting_comments: v})} />
             </div>
           </div>
           <div className="mb-8 p-6 md:p-8 bg-slate-50 rounded-[1.5rem] md:rounded-[2.5rem] border-2 border-dashed border-slate-100">
@@ -924,6 +971,20 @@ const Select = React.memo(({ label, value, options, onChange }: any) => (
         <option key={opt} value={opt}>{opt}</option>
       ))}
     </select>
+  </div>
+));
+
+const TextArea = React.memo(({ label, value, onChange }: any) => (
+  <div className="space-y-2">
+    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
+      {label}
+    </label>
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      rows={3}
+      className="w-full px-5 py-3.5 bg-slate-50 border border-slate-100 rounded-xl focus:border-[#c5a059] focus:bg-white outline-none text-sm font-bold transition-all resize-none"
+    />
   </div>
 ));
 

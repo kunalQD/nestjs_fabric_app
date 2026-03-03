@@ -1,7 +1,7 @@
 
 import { Order, OrderStatus, OrderBilling, WindowEntry } from '../types';
 
-const BASE_URL = 'https://fabric-calc-5uhi.onrender.com'; // Change this to your backend URL or use environment variable
+const BASE_URL = 'http://localhost:5000';
 const API_BASE = `${BASE_URL}/api`;
 
 const getAuthHeader = () => {
@@ -111,7 +111,8 @@ const mapBackendOrder = (o: any): Order => {
           is_double_layer: !!(e.IsDouble || e.is_double_layer),
           model_type: e.model_type || '',
           fit_type: e.fit_type || '',
-          mount_type: e.mount_type || ''
+          mount_type: e.mount_type || '',
+          fitting_comments: e.fitting_comments || ''
         }))
       : []
   };
