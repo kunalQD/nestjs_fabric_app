@@ -30,6 +30,7 @@ export interface WindowEntry {
   fit_type?: string;
   mount_type?: string;
   fitting_comments?: string;
+  panel_split?: string;
 }
 
 export interface Order {

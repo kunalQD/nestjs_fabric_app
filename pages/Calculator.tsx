@@ -89,12 +89,15 @@ export const Calculator: React.FC<CalculatorProps> = ({
       model_type: MODEL_TYPES[0],
       fit_type: FIT_TYPES[0],
       mount_type: MOUNT_TYPES[0],
-      fitting_comments: ""
+      fitting_comments: "",
+      panel_split: ""
     });
 
   const [payments, setPayments] = useState<
     { amount: number; date: string; method: string }[]
   >([]);
+
+  const [editingPaymentIndex, setEditingPaymentIndex] = useState<number | null>(null);
 
   const [totalBill, setTotalBill] = useState(0);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
@@ -162,7 +165,19 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
   const totalFabric = useMemo(
     () =>
-      entries.reduce((sum, e) => sum + e.quantity, 0),
+      entries.reduce((sum, e) => {
+        const isBlind = e.stitch_type.toLowerCase().includes('blind') || e.stitch_type.toLowerCase().includes('roman');
+        return isBlind ? sum : sum + e.quantity;
+      }, 0),
+    [entries]
+  );
+
+  const totalSqft = useMemo(
+    () =>
+      entries.reduce((sum, e) => {
+        const isBlind = e.stitch_type.toLowerCase().includes('blind') || e.stitch_type.toLowerCase().includes('roman');
+        return isBlind ? sum + e.sqft : sum;
+      }, 0),
     [entries]
   );
 
@@ -314,6 +329,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       fit_type: currentEntry.fit_type || FIT_TYPES[0],
       mount_type: currentEntry.mount_type || MOUNT_TYPES[0],
       fitting_comments: currentEntry.fitting_comments || "",
+      panel_split: currentEntry.panel_split || "",
       panels,
       quantity,
       sqft,
@@ -342,7 +358,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
       model_type: MODEL_TYPES[0],
       fit_type: FIT_TYPES[0],
       mount_type: MOUNT_TYPES[0],
-      fitting_comments: ""
+      fitting_comments: "",
+      panel_split: ""
     });
   }, [
     currentEntry,
@@ -401,7 +418,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
     return;
   }
 
-  setPayments(prev => [...prev, newPayment]);
+  if (editingPaymentIndex !== null) {
+    setPayments(prev => prev.map((p, i) => i === editingPaymentIndex ? newPayment : p));
+    setEditingPaymentIndex(null);
+  } else {
+    setPayments(prev => [...prev, newPayment]);
+  }
 
   setShowPaymentForm(false);
 
@@ -411,7 +433,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
     method: "UPI"
   });
 
-}, [newPayment]);
+}, [newPayment, editingPaymentIndex]);
 
   const handleDownloadReceipt = useCallback((paymentIndex: number) => {
     const doc = new jsPDF();
@@ -490,6 +512,185 @@ export const Calculator: React.FC<CalculatorProps> = ({
     
     doc.save(`Receipt_${customer.name}_${currentPayment.date}.pdf`);
   }, [customer, payments, totalBill, paidAmount, balanceAmount]);
+
+  const handleDownloadJobSheet = useCallback(() => {
+    const doc = new jsPDF();
+    
+    // --- Styles & Colors ---
+    const navy = [0, 45, 98];
+    const gold = [197, 160, 89];
+    const slate = [100, 116, 139];
+    const bgGray = [248, 250, 252];
+
+    // --- Header ---
+    doc.setFontSize(28);
+    doc.setTextColor(navy[0], navy[1], navy[2]);
+    doc.setFont("helvetica", "bold");
+    doc.text("QUILT & DRAPES", 15, 25);
+    
+    doc.setFontSize(8);
+    doc.setTextColor(slate[0], slate[1], slate[2]);
+    doc.setFont("helvetica", "bold");
+    doc.text("F A B R I C A T I O N   W O R K   O R D E R", 15, 30);
+
+    doc.setFontSize(22);
+    doc.setTextColor(gold[0], gold[1], gold[2]);
+    doc.text("JOB SHEET", 195, 25, { align: "right" });
+    
+    doc.setFontSize(9);
+    doc.setTextColor(slate[0], slate[1], slate[2]);
+    doc.setFont("helvetica", "normal");
+    doc.text(new Date().toLocaleDateString('en-GB'), 195, 30, { align: "right" });
+
+    // Decorative Line
+    doc.setDrawColor(navy[0], navy[1], navy[2]);
+    doc.setLineWidth(1.5);
+    doc.line(15, 38, 195, 38);
+
+    // --- Production Context Box ---
+    doc.setFillColor(bgGray[0], bgGray[1], bgGray[2]);
+    doc.roundedRect(15, 45, 180, 35, 5, 5, 'F');
+    
+    doc.setFontSize(8);
+    doc.setTextColor(gold[0], gold[1], gold[2]);
+    doc.setFont("helvetica", "bold");
+    doc.text("PRODUCTION CONTEXT", 25, 55);
+    
+    doc.setFontSize(18);
+    doc.setTextColor(navy[0], navy[1], navy[2]);
+    doc.text(customer.name || 'Jayaraj - Dynance', 25, 65);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(slate[0], slate[1], slate[2]);
+    doc.setFont("helvetica", "normal");
+    doc.text(customer.phone || '', 25, 72);
+
+    // Context Details (Columns)
+    doc.setFontSize(7);
+    doc.setTextColor(slate[0], slate[1], slate[2]);
+    doc.setFont("helvetica", "bold");
+    doc.text("SHOWROOM", 120, 55);
+    doc.text("TARGET DATE", 160, 55);
+    doc.text("MASTER TAILOR", 120, 70);
+    doc.text("SITE FITTER", 160, 70);
+
+    doc.setFontSize(10);
+    doc.setTextColor(0);
+    doc.text(customer.showroom || 'N/A', 120, 61);
+    doc.text(customer.due_date || 'N/A', 160, 61);
+    doc.text(customer.tailor || 'N/A', 120, 76);
+    doc.text(customer.fitter || 'N/A', 160, 76);
+
+    let yPos = 90;
+
+    // --- Window Units (Boxes) ---
+    entries.forEach((e, idx) => {
+      let boxHeight = 25; // Basic height
+      if (e.notes) boxHeight += 10;
+      if (e.images && e.images.length > 0) boxHeight += 45;
+
+      // Page overflow check
+      if (yPos + boxHeight > 275) {
+        doc.addPage();
+        yPos = 20;
+      }
+
+      // Box Background and Separator
+      doc.setFillColor(255, 255, 255);
+      doc.rect(15, yPos, 180, boxHeight, 'F');
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.1);
+      doc.rect(15, yPos, 180, boxHeight);
+
+      // Window Header Bar
+      doc.setFillColor(navy[0], navy[1], navy[2]);
+      doc.rect(15, yPos, 180, 8, 'F');
+      
+      doc.setTextColor(255);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.text("WINDOW UNIT", 20, yPos + 5.5);
+      doc.text("DIMENSIONS (W x H)", 80, yPos + 5.5, { align: "center" });
+      doc.text("SPECS", 135, yPos + 5.5, { align: "center" });
+      const isBlind = e.stitch_type.toLowerCase().includes('blind') || e.stitch_type.toLowerCase().includes('roman');
+      doc.text(isBlind ? "QUANTITY (SQFT)" : "FABRIC (M)", 185, yPos + 5.5, { align: "right" });
+
+      // Row Data
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(11);
+      doc.text(e.window_name, 20, yPos + 18);
+      
+      doc.text(`${e.width}" x ${e.height}"`, 80, yPos + 18, { align: "center" });
+      
+      doc.setFontSize(8);
+      doc.text(`${e.stitch_type.toUpperCase()}`, 135, yPos + 16, { align: "center" });
+      doc.setTextColor(slate[0], slate[1], slate[2]);
+      doc.text(`${e.lining_type.toUpperCase()}`, 135, yPos + 20, { align: "center" });
+      
+      doc.setTextColor(navy[0], navy[1], navy[2]);
+      doc.setFontSize(11);
+      doc.text(isBlind ? `${e.sqft.toFixed(2)} Sqft` : `${e.quantity.toFixed(2)} M`, 185, yPos + 18, { align: "right" });
+
+      // Specification Badges / Extra Info
+      doc.setFontSize(7);
+      doc.setTextColor(slate[0], slate[1], slate[2]);
+      doc.text(`PANELS: ${e.panels}`, 20, yPos + 23);
+      if (e.panel_split) {
+        doc.text(`SPLIT: ${e.panel_split}`, 45, yPos + 23);
+      }
+
+      let contentY = yPos + 26;
+
+      // Note Row
+      if (e.notes) {
+        doc.setFillColor(bgGray[0], bgGray[1], bgGray[2]);
+        doc.rect(15, contentY, 180, 8, 'F');
+        doc.setFontSize(8);
+        doc.setTextColor(slate[0], slate[1], slate[2]);
+        doc.setFont("helvetica", "italic");
+        doc.text(`Note: ${e.notes}`, 20, contentY + 5.5);
+        contentY += 8;
+      }
+
+      // Image Row
+      if (e.images && e.images.length > 0) {
+        let xImg = 20;
+        e.images.slice(0, 4).forEach((img) => {
+          try {
+            doc.addImage(img, 'JPEG', xImg, contentY + 5, 30, 30);
+          } catch (err) {}
+          xImg += 35;
+        });
+        contentY += 40;
+      }
+
+      yPos = contentY + 10;
+    });
+
+    // --- Footer Summary ---
+    if (yPos > 260) {
+      doc.addPage();
+      yPos = 20;
+    }
+    doc.setFillColor(navy[0], navy[1], navy[2]);
+    doc.rect(15, yPos, 180, 15, 'F');
+    doc.setTextColor(255);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    
+    let summaryText = "";
+    if (totalFabric > 0 && totalSqft > 0) {
+      summaryText = `TOTAL FABRIC: ${totalFabric.toFixed(2)} M | TOTAL BLINDS: ${totalSqft.toFixed(2)} SQFT`;
+    } else if (totalFabric > 0) {
+      summaryText = `PROJECT TOTAL FABRIC REQUIRED: ${totalFabric.toFixed(2)} M`;
+    } else if (totalSqft > 0) {
+      summaryText = `PROJECT TOTAL BLINDS REQUIRED: ${totalSqft.toFixed(2)} SQFT`;
+    }
+
+    doc.text(summaryText, 105, yPos + 9.5, { align: "center" });
+
+    doc.save(`JobSheet_${customer.name}.pdf`);
+  }, [customer, entries, totalFabric, totalSqft]);
 
   const handleDownloadFittingSheet = useCallback(() => {
     const doc = new jsPDF();
@@ -603,7 +804,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
           </div>
           <div className="flex flex-col md:flex-row gap-3">
             <button 
-              onClick={() => window.print()}
+              onClick={handleDownloadJobSheet}
               className="w-full md:w-auto px-6 py-4 bg-white text-[#002d62] border border-slate-200 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-sm hover:bg-slate-50 transition-colors"
             >
               <i className="fas fa-file-pdf"></i> Generate Job Sheet
@@ -658,6 +859,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
             <Select label="Model" options={MODEL_TYPES} value={currentEntry.model_type || MODEL_TYPES[0]} onChange={v => setCurrentEntry({...currentEntry, model_type: v})} />
             <Select label="Fit" options={FIT_TYPES} value={currentEntry.fit_type || FIT_TYPES[0]} onChange={v => setCurrentEntry({...currentEntry, fit_type: v})} />
             <Select label="Mount" options={MOUNT_TYPES} value={currentEntry.mount_type || MOUNT_TYPES[0]} onChange={v => setCurrentEntry({...currentEntry, mount_type: v})} />
+
+            <div className="md:col-span-1">
+              <Input label="Panel Split (e.g. 2.5+2.5)" value={currentEntry.panel_split || ''} onChange={v => setCurrentEntry({...currentEntry, panel_split: v})} />
+            </div>
 
             <div className="md:col-span-1 flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100 h-[58px] mt-6">
               <input 
@@ -743,6 +948,17 @@ export const Calculator: React.FC<CalculatorProps> = ({
         </div>
         <div className="flex gap-2">
           <button 
+            onClick={() => {
+              setNewPayment(p);
+              setEditingPaymentIndex(idx);
+              setShowPaymentForm(true);
+            }}
+            className="w-10 h-10 bg-slate-100 text-slate-400 rounded-xl hover:bg-[#002d62] hover:text-white transition-all flex items-center justify-center"
+            title="Edit Payment"
+          >
+            <i className="fas fa-pen text-[10px]"></i>
+          </button>
+          <button 
             onClick={() => handleDownloadReceipt(idx)}
             className="w-10 h-10 bg-slate-100 text-[#002d62] rounded-xl hover:bg-[#002d62] hover:text-white transition-all flex items-center justify-center"
             title="Download Receipt"
@@ -808,17 +1024,31 @@ export const Calculator: React.FC<CalculatorProps> = ({
                     <div className="text-[8px] text-slate-400 font-bold uppercase">
                       {e.stitch_type.toLowerCase().includes('blind') || e.stitch_type.toLowerCase().includes('roman') 
                         ? `${e.sqft} Sqft` 
-                        : `${e.panels} Panels`}
+                        : `${e.panels} Panels ${e.panel_split ? `(${e.panel_split})` : ''}`}
                     </div>
                   </td>
-                  <td className="px-6 md:px-10 py-6 text-center font-mono font-black text-[#002d62] text-lg">{e.quantity.toFixed(2)} M</td>
+                  <td className="px-6 md:px-10 py-6 text-center font-mono font-black text-[#002d62] text-lg">
+                    {e.stitch_type.toLowerCase().includes('blind') || e.stitch_type.toLowerCase().includes('roman') 
+                      ? `${e.sqft.toFixed(2)} Sqft` 
+                      : `${e.quantity.toFixed(2)} M`}
+                  </td>
                   <td className="px-6 md:px-10 py-6 text-right">
-                    <button 
-                      onClick={() => { setCurrentEntry({...entries[idx]}); setIsEditWindow(idx); }} 
-                      className="w-10 h-10 bg-slate-100 text-slate-400 rounded-xl hover:bg-[#002d62] hover:text-white transition-all flex items-center justify-center mx-auto mr-0"
-                    >
-                      <i className="fas fa-pen text-[10px]"></i>
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button 
+                        onClick={() => { setCurrentEntry({...entries[idx]}); setIsEditWindow(idx); }} 
+                        className="w-10 h-10 bg-slate-100 text-slate-400 rounded-xl hover:bg-[#002d62] hover:text-white transition-all flex items-center justify-center"
+                        title="Edit Unit"
+                      >
+                        <i className="fas fa-pen text-[10px]"></i>
+                      </button>
+                      <button 
+                        onClick={() => { if(confirm('Remove this unit?')) setEntries(prev => prev.filter((_, i) => i !== idx)); }} 
+                        className="w-10 h-10 bg-slate-100 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all flex items-center justify-center"
+                        title="Delete Unit"
+                      >
+                        <i className="fas fa-trash-alt text-[10px]"></i>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -911,9 +1141,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
           </tbody>
           <tfoot>
             <tr className="bg-slate-900 text-white">
-              <td colSpan={3} className="p-4 text-[10px] font-black uppercase tracking-[0.2em] text-right">Project Total Fabric Required</td>
-              <td className="p-4 text-right font-black text-xl">
-                {totalFabric.toFixed(2)} M M
+              <td colSpan={3} className="p-4 text-[10px] font-black uppercase tracking-[0.2em] text-right">Project Total Requirement</td>
+              <td className="p-4 text-right font-black text-lg">
+                <div className="flex flex-col items-end">
+                  {totalFabric > 0 && <span>{totalFabric.toFixed(2)} M</span>}
+                  {totalSqft > 0 && <span>{totalSqft.toFixed(2)} Sqft</span>}
+                </div>
               </td>
             </tr>
           </tfoot>

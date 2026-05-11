@@ -14,6 +14,14 @@ export const Settlements: React.FC = () => {
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(lastDay);
 
+  const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<OrderBilling | null>(null);
+  const [newPayment, setNewPayment] = useState({
+    amount: 0,
+    date: new Date().toISOString().split('T')[0],
+    method: 'UPI'
+  });
+  const [submitting, setSubmitting] = useState(false);
+
   const fetchSettlements = () => {
     setLoading(true);
     dataService.getBillingData(startDate, endDate)
@@ -26,6 +34,27 @@ export const Settlements: React.FC = () => {
         setError("Failed to load settlement data.");
       })
       .finally(() => setLoading(false));
+  };
+
+  const handleRecordPayment = async () => {
+    if (!selectedOrderForPayment || newPayment.amount <= 0) return;
+    
+    setSubmitting(true);
+    try {
+      await dataService.recordPayment(selectedOrderForPayment.order_id, newPayment);
+      fetchSettlements();
+      setSelectedOrderForPayment(null);
+      setNewPayment({
+        amount: 0,
+        date: new Date().toISOString().split('T')[0],
+        method: 'UPI'
+      });
+    } catch (err) {
+      console.error("Error recording payment:", err);
+      setError("Failed to record payment.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   useEffect(() => {
@@ -150,8 +179,16 @@ export const Settlements: React.FC = () => {
                       <td className="px-6 md:px-10 py-6 text-center font-mono font-black text-emerald-600">
                         ₹{bill.paid_total.toLocaleString('en-IN')}
                       </td>
-                      <td className="px-6 md:px-10 py-6 text-right font-mono font-black text-red-500 text-lg">
+                      <td className="px-6 md:px-10 py-6 text-center font-mono font-black text-red-500 text-lg">
                         ₹{balance.toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-6 md:px-10 py-6 text-right">
+                        <button 
+                          onClick={() => setSelectedOrderForPayment(bill)}
+                          className="px-4 py-2 bg-[#002d62] text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-[#003d7a] transition-all flex items-center gap-2 ml-auto"
+                        >
+                          <i className="fas fa-plus"></i> Record Payment
+                        </button>
                       </td>
                     </tr>
                   );
@@ -161,6 +198,70 @@ export const Settlements: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Payment Modal */}
+      {selectedOrderForPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-[#002d62]/30 backdrop-blur-sm" onClick={() => setSelectedOrderForPayment(null)}></div>
+          <div className="bg-white rounded-[2rem] w-full max-w-md shadow-2xl relative overflow-hidden animate-in zoom-in duration-200">
+            <div className="bg-[#002d62] p-8 text-white">
+              <h3 className="text-xl font-black uppercase tracking-widest">Add Payment</h3>
+              <p className="text-white/50 text-[10px] font-bold mt-1">Collecting for {selectedOrderForPayment.customer_name}</p>
+            </div>
+            <div className="p-8 space-y-6">
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Payment Amount (INR)</label>
+                <input 
+                  type="number"
+                  value={newPayment.amount || ''}
+                  onChange={(e) => setNewPayment({...newPayment, amount: Number(e.target.value)})}
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-[#002d62] rounded-2xl outline-none font-black text-[#002d62] transition-all"
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Date</label>
+                  <input 
+                    type="date"
+                    value={newPayment.date}
+                    onChange={(e) => setNewPayment({...newPayment, date: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-[11px] text-[#002d62]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Method</label>
+                  <select 
+                    value={newPayment.method}
+                    onChange={(e) => setNewPayment({...newPayment, method: e.target.value})}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-[11px] text-[#002d62]"
+                  >
+                    <option value="UPI">UPI</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Bank">Bank Transfer</option>
+                    <option value="Card">Card</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button 
+                  onClick={() => setSelectedOrderForPayment(null)}
+                  className="flex-1 py-4 bg-slate-100 text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  disabled={submitting || newPayment.amount <= 0}
+                  onClick={handleRecordPayment}
+                  className="flex-[2] py-4 bg-[#002d62] text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-[#003d7a] transition-all shadow-xl disabled:opacity-50"
+                >
+                  {submitting ? 'Recording...' : 'Update Settlement'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

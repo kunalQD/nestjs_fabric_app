@@ -112,7 +112,8 @@ const mapBackendOrder = (o: any): Order => {
           model_type: e.model_type || '',
           fit_type: e.fit_type || '',
           mount_type: e.mount_type || '',
-          fitting_comments: e.fitting_comments || ''
+          fitting_comments: e.fitting_comments || '',
+          panel_split: e.panel_split || ''
         }))
       : []
   };
@@ -273,6 +274,16 @@ export const dataService = {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ payment_status: status }),
+      mode: 'cors'
+    });
+    await handleResponse(res);
+  },
+
+  recordPayment: async (orderId: string, payment: { amount: number; date: string; method: string }): Promise<void> => {
+    const res = await fetch(`${API_BASE}/orders/${orderId}/payments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(payment),
       mode: 'cors'
     });
     await handleResponse(res);
