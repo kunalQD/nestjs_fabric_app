@@ -18,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPage, setCurrentPage, use
     { id: 'billing', label: 'Billing', roles: [UserRole.ADMIN] },
     { id: 'settlements', label: 'Settlements', roles: [UserRole.ADMIN] },
     { id: 'calendar', label: 'Schedule', roles: [UserRole.ADMIN, UserRole.STAFF] },
+    { id: 'quotation', label: 'Quotation', roles: [UserRole.ADMIN, UserRole.STAFF] },
     { id: 'calculator', label: 'Create Order', roles: [UserRole.ADMIN, UserRole.STAFF], highlight: true },
   ];
 

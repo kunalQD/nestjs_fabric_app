@@ -72,3 +72,50 @@ export interface OrderBilling {
   payments: { amount: number; date: string; method: string }[];
   paid_total: number;
 }
+
+export interface QuotationWindow {
+  id: string;
+  name: string;
+  type: 'Curtain' | 'Roman Blind' | 'Roller Blind' | 'Rods Only' | 'Fabric Only' | 'Misc';
+  fabric_qty: number;
+  fabric_rate: number;
+  panels: number;
+  stitching_rate: number;
+  track_ft: number;
+  track_rate: number;
+  sqft: number;
+  blind_rate: number;
+  mechanism_cost: number;
+  installation_cost: number;
+  comment?: string;
+  include_stitching: boolean;
+  include_fabric: boolean;
+  include_hardware: boolean;
+  is_double_curtain: boolean;
+}
+
+export interface QuotationRoom {
+  id: string;
+  name: string;
+  windows: QuotationWindow[];
+}
+
+export interface MiscCharge {
+  id: string;
+  description: string;
+  amount: number;
+  comment: string;
+}
+
+export interface Quotation {
+  id: string;
+  customer_name: string;
+  phone: string;
+  date: string;
+  rooms: QuotationRoom[];
+  misc_charges: MiscCharge[];
+  fabric_discount_percent: number;
+  additional_discount: number;
+  terms_conditions?: string;
+  total_amount: number;
+}
