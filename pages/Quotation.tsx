@@ -15,7 +15,7 @@ export const Quotation: React.FC = () => {
   const [fabricDiscount, setFabricDiscount] = useState<number>(0);
   const [additionalDiscount, setAdditionalDiscount] = useState<number>(0);
   const [terms, setTerms] = useState<string>(
-    "1. 50% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back.\n4. Subject to Jaipur Jurisdiction."
+    "1. 70% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back."
   );
   
   const handleAddRoom = () => {
@@ -88,7 +88,7 @@ export const Quotation: React.FC = () => {
       if (w.include_stitching) total += (w.panels || 0) * (w.stitching_rate || 0) * factor;
       total += (w.mechanism_cost || 0);
       if (w.include_hardware) total += (w.track_ft || 0) * (w.track_rate || 0);
-    } else if (w.type === 'Roller Blind') {
+    } else if (w.type === 'Roller Blind' || w.type === 'Mosquito Net') {
       total += (w.sqft || 0) * (w.blind_rate || 0);
       total += (w.mechanism_cost || 0);
     } else if (w.type === 'Rods Only') {
@@ -189,7 +189,7 @@ export const Quotation: React.FC = () => {
         if (w.is_double_curtain) details.push('Double Layer');
         if (w.type === 'Curtain') details.push(`${w.fabric_qty}m Fab`, `${w.panels} Pnl`);
         else if (w.type === 'Roman Blind') details.push(`${w.fabric_qty}m Fab`, 'Roman Mechanism');
-        else if (w.type === 'Roller Blind') details.push(`${w.sqft} sqft`);
+        else if (w.type === 'Roller Blind' || w.type === 'Mosquito Net') details.push(`${w.sqft} sqft`);
         else if (w.type === 'Rods Only') details.push(`${w.track_ft} ft Hardware`);
         
         return [
@@ -448,6 +448,7 @@ export const Quotation: React.FC = () => {
                                <option value="Curtain">Curtain</option>
                                <option value="Roman Blind">Roman Blind</option>
                                <option value="Roller Blind">Roller Blind</option>
+                               <option value="Mosquito Net">Mosquito Net</option>
                                <option value="Rods Only">Rods Only</option>
                                <option value="Fabric Only">Fabric Only</option>
                                <option value="Misc">Misc</option>
@@ -492,10 +493,12 @@ export const Quotation: React.FC = () => {
                                </div>
                              )}
 
-                             {/* Blinds Section */}
-                             {(window.type === 'Roller Blind') && (
+                             {/* Blinds / Net Section */}
+                             {(window.type === 'Roller Blind' || window.type === 'Mosquito Net') && (
                                <div className="space-y-1">
-                                 <label className="block text-[7px] font-black text-slate-400 uppercase mb-1">Blind SQFT & Rate</label>
+                                 <label className="block text-[7px] font-black text-slate-400 uppercase mb-1">
+                                   {window.type === 'Mosquito Net' ? 'Net SQFT & Rate' : 'Blind SQFT & Rate'}
+                                 </label>
                                  <div className="flex gap-1">
                                    <input 
                                      type="number" 
@@ -587,15 +590,15 @@ export const Quotation: React.FC = () => {
                                 + Installation ₹{window.installation_cost}
                               </button>
                             )}
-                            {(window.type === 'Roman Blind' || window.type === 'Roller Blind') && (
+                            {(window.type === 'Roman Blind' || window.type === 'Roller Blind' || window.type === 'Mosquito Net') && (
                                <button 
                                onClick={() => {
-                                 const cost = prompt("Enter Mechanism Cost:", window.mechanism_cost.toString());
+                                 const cost = prompt("Enter Mechanism/Frame Cost:", window.mechanism_cost.toString());
                                  if (cost !== null) updateWindow(room.id, window.id, { mechanism_cost: Number(cost) });
                                }}
                                className="text-[7px] font-black text-emerald-500 uppercase tracking-tighter hover:underline"
                              >
-                               + Mechanism ₹{window.mechanism_cost}
+                               + Mechanism/Frame ₹{window.mechanism_cost}
                              </button>
                             )}
                           </div>

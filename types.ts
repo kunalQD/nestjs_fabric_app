@@ -76,7 +76,7 @@ export interface OrderBilling {
 export interface QuotationWindow {
   id: string;
   name: string;
-  type: 'Curtain' | 'Roman Blind' | 'Roller Blind' | 'Rods Only' | 'Fabric Only' | 'Misc';
+  type: 'Curtain' | 'Roman Blind' | 'Roller Blind' | 'Mosquito Net' | 'Rods Only' | 'Fabric Only' | 'Misc';
   fabric_qty: number;
   fabric_rate: number;
   panels: number;
