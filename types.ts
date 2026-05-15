@@ -116,6 +116,7 @@ export interface Quotation {
   misc_charges: MiscCharge[];
   fabric_discount_percent: number;
   additional_discount: number;
+  gst_percent: number;
   terms_conditions?: string;
   total_amount: number;
 }

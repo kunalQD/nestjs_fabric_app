@@ -14,8 +14,9 @@ export const Quotation: React.FC = () => {
   const [miscCharges, setMiscCharges] = useState<MiscCharge[]>([]);
   const [fabricDiscount, setFabricDiscount] = useState<number>(0);
   const [additionalDiscount, setAdditionalDiscount] = useState<number>(0);
+  const [gstPercent, setGstPercent] = useState<number>(0);
   const [terms, setTerms] = useState<string>(
-    "1. 70% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back."
+    "1. 50% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back.\n4. Subject to Jaipur Jurisdiction."
   );
   
   const handleAddRoom = () => {
@@ -128,9 +129,17 @@ export const Quotation: React.FC = () => {
     return Math.round(fabricOnlyTotal * (fabricDiscount / 100));
   }, [fabricOnlyTotal, fabricDiscount]);
 
-  const finalTotal = useMemo(() => {
+  const totalBeforeGst = useMemo(() => {
     return Math.max(0, rawGrandTotal - fabricDiscountAmount - additionalDiscount);
   }, [rawGrandTotal, fabricDiscountAmount, additionalDiscount]);
+
+  const gstAmount = useMemo(() => {
+    return Math.round(totalBeforeGst * (gstPercent / 100));
+  }, [totalBeforeGst, gstPercent]);
+
+  const finalTotal = useMemo(() => {
+    return totalBeforeGst + gstAmount;
+  }, [totalBeforeGst, gstAmount]);
 
   const handleDownloadQuotation = useCallback(() => {
     const doc = new jsPDF();
@@ -172,6 +181,7 @@ export const Quotation: React.FC = () => {
     doc.text(`Quote ID: #QD-${Math.floor(Math.random()*10000)}`, 195, 71, { align: "right" });
 
     let currentY = 85;
+    let totalMosquitoNetInstall = 0;
 
     rooms.forEach(room => {
       // Room Header
@@ -191,13 +201,19 @@ export const Quotation: React.FC = () => {
         else if (w.type === 'Roman Blind') details.push(`${w.fabric_qty}m Fab`, 'Roman Mechanism');
         else if (w.type === 'Roller Blind' || w.type === 'Mosquito Net') details.push(`${w.sqft} sqft`);
         else if (w.type === 'Rods Only') details.push(`${w.track_ft} ft Hardware`);
+
+        let windowSubtotal = calculateWindowTotal(w);
+        if (w.type === 'Mosquito Net') {
+          totalMosquitoNetInstall += (w.installation_cost || 0);
+          windowSubtotal -= (w.installation_cost || 0);
+        }
         
         return [
           idx + 1,
           `${w.name}`,
           w.type,
           details.join(', '),
-          `Rs. ${calculateWindowTotal(w).toLocaleString()}`
+          `Rs. ${windowSubtotal.toLocaleString()}`
         ];
       });
 
@@ -276,6 +292,22 @@ export const Quotation: React.FC = () => {
       doc.text(`- Rs. ${additionalDiscount.toLocaleString()}`, 195, currentY, { align: "right" });
     }
 
+    if (totalMosquitoNetInstall > 0) {
+      currentY += 6;
+      doc.setTextColor(100);
+      doc.text("Mosquito Net Installation:", 140, currentY);
+      doc.text(`Rs. ${totalMosquitoNetInstall.toLocaleString()}`, 195, currentY, { align: "right" });
+    }
+
+    if (gstPercent > 0) {
+      currentY += 6;
+      doc.setTextColor(navy[0], navy[1], navy[2]);
+      doc.setFont("helvetica", "bold");
+      doc.text(`GST (${gstPercent}%):`, 140, currentY);
+      doc.text(`Rs. ${gstAmount.toLocaleString()}`, 195, currentY, { align: "right" });
+      doc.setFont("helvetica", "normal");
+    }
+
     currentY += 10;
     doc.setFillColor(navy[0], navy[1], navy[2]);
     doc.rect(130, currentY - 5, 65, 12, 'F');
@@ -304,7 +336,7 @@ export const Quotation: React.FC = () => {
     const blob = doc.output('blob');
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
-  }, [customer, rooms, miscCharges, rawGrandTotal, fabricDiscountAmount, additionalDiscount, finalTotal, terms, fabricDiscount]);
+  }, [customer, rooms, miscCharges, rawGrandTotal, fabricDiscountAmount, additionalDiscount, finalTotal, terms, fabricDiscount, gstPercent, gstAmount]);
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -380,6 +412,19 @@ export const Quotation: React.FC = () => {
                   className="w-full px-4 py-3 bg-yellow-50 text-yellow-700 rounded-xl font-black text-sm outline-none"
                   placeholder="e.g. 5000"
                 />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">GST (%)</label>
+                <select 
+                  value={gstPercent}
+                  onChange={(e) => setGstPercent(Number(e.target.value))}
+                  className="w-full px-4 py-3 bg-blue-50 text-blue-700 rounded-xl font-black text-sm outline-none appearance-none"
+                >
+                  <option value={0}>0% (No GST)</option>
+                  <option value={5}>5% GST</option>
+                  <option value={12}>12% GST</option>
+                  <option value={18}>18% GST</option>
+                </select>
               </div>
               <div className="space-y-1">
                 <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Terms & Conditions</label>
@@ -658,11 +703,16 @@ export const Quotation: React.FC = () => {
             <div className="z-10">
               <div className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-300">Quotation Summary</div>
               <div className="text-4xl font-black mt-2 tracking-tighter">Rs. {finalTotal.toLocaleString()}</div>
-              <div className="flex items-center gap-4 mt-2">
+              <div className="flex flex-wrap items-center gap-4 mt-2">
                 <span className="text-[10px] font-bold text-blue-200/50 uppercase">Subtotal Rs. {rawGrandTotal.toLocaleString()}</span>
                 {(fabricDiscountAmount + additionalDiscount) > 0 && (
                   <span className="text-[10px] font-bold text-red-300 uppercase">
-                    Total Savings Rs. {(fabricDiscountAmount + additionalDiscount).toLocaleString()}
+                    Savings Rs. {(fabricDiscountAmount + additionalDiscount).toLocaleString()}
+                  </span>
+                )}
+                {gstPercent > 0 && (
+                  <span className="text-[10px] font-bold text-emerald-300 uppercase">
+                    GST Rs. {gstAmount.toLocaleString()}
                   </span>
                 )}
               </div>
