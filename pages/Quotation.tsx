@@ -1,10 +1,16 @@
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { QuotationRoom, QuotationWindow, MiscCharge } from '../types';
+import { QuotationRoom, QuotationWindow, MiscCharge, Quotation as QType } from '../types';
+import { dataService } from '../services/dataService';
 
 export const Quotation: React.FC = () => {
+  const [view, setView] = useState<'create' | 'list'>('create');
+  const [savedQuotes, setSavedQuotes] = useState<QType[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  
   const [customer, setCustomer] = useState({
     name: '',
     phone: '',
@@ -18,6 +24,87 @@ export const Quotation: React.FC = () => {
   const [terms, setTerms] = useState<string>(
     "1. 50% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back.\n4. Subject to Jaipur Jurisdiction."
   );
+
+  const fetchQuotations = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const quotes = await dataService.getQuotations();
+      setSavedQuotes(quotes);
+    } catch (error) {
+      console.error("Failed to fetch quotations", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchQuotations();
+  }, [fetchQuotations]);
+
+  const handleSaveQuotation = async () => {
+    if (!customer.name) {
+      alert("Please enter customer name before saving.");
+      return;
+    }
+
+    const payload: QType = {
+      id: currentId || `temp_${Date.now()}`,
+      customer_name: customer.name,
+      phone: customer.phone,
+      date: new Date().toISOString(),
+      rooms,
+      misc_charges: miscCharges,
+      fabric_discount_percent: fabricDiscount,
+      additional_discount: additionalDiscount,
+      gst_percent: gstPercent,
+      terms_conditions: terms,
+      total_amount: finalTotal
+    };
+
+    try {
+      await dataService.saveQuotation(payload);
+      alert("Quotation saved successfully!");
+      fetchQuotations();
+      setView('list');
+    } catch (error) {
+      console.error("Failed to save quotation", error);
+      alert("Error saving quotation. Please try again.");
+    }
+  };
+
+  const loadQuotation = (q: QType) => {
+    setCurrentId(q.id);
+    setCustomer({ name: q.customer_name, phone: q.phone });
+    setRooms(q.rooms);
+    setMiscCharges(q.misc_charges);
+    setFabricDiscount(q.fabric_discount_percent);
+    setAdditionalDiscount(q.additional_discount);
+    setGstPercent(q.gst_percent);
+    setTerms(q.terms_conditions || "");
+    setView('create');
+  };
+
+  const deleteQuotation = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this quotation?")) return;
+    try {
+      await dataService.deleteQuotation(id);
+      setSavedQuotes(savedQuotes.filter(q => q.id !== id));
+    } catch (error) {
+      console.error("Failed to delete quotation", error);
+      alert("Error deleting quotation.");
+    }
+  };
+
+  const resetForm = () => {
+    setCurrentId(null);
+    setCustomer({ name: '', phone: '' });
+    setRooms([]);
+    setMiscCharges([]);
+    setFabricDiscount(0);
+    setAdditionalDiscount(0);
+    setGstPercent(0);
+    setView('create');
+  };
   
   const handleAddRoom = () => {
     const roomName = prompt("Enter Room Name (e.g. Master Bedroom):");
@@ -119,19 +206,28 @@ export const Quotation: React.FC = () => {
 
   const rawGrandTotal = useMemo(() => {
     const roomsTotal = rooms.reduce((sum, room) => 
-      sum + room.windows.reduce((wSum, w) => wSum + calculateWindowTotal(w), 0)
+      sum + room.windows.reduce((wSum, w) => {
+        // Exclude installation from "Estimate Total" if we want it separate
+        return wSum + (calculateWindowTotal(w) - (w.installation_cost || 0));
+      }, 0)
     , 0);
     const miscTotal = miscCharges.reduce((sum, charge) => sum + charge.amount, 0);
     return roomsTotal + miscTotal;
   }, [rooms, miscCharges]);
+
+  const totalInstallation = useMemo(() => {
+    return rooms.reduce((sum, room) => 
+      sum + room.windows.reduce((wSum, w) => wSum + (w.installation_cost || 0), 0)
+    , 0);
+  }, [rooms]);
 
   const fabricDiscountAmount = useMemo(() => {
     return Math.round(fabricOnlyTotal * (fabricDiscount / 100));
   }, [fabricOnlyTotal, fabricDiscount]);
 
   const totalBeforeGst = useMemo(() => {
-    return Math.max(0, rawGrandTotal - fabricDiscountAmount - additionalDiscount);
-  }, [rawGrandTotal, fabricDiscountAmount, additionalDiscount]);
+    return Math.max(0, rawGrandTotal + totalInstallation - fabricDiscountAmount - additionalDiscount);
+  }, [rawGrandTotal, totalInstallation, fabricDiscountAmount, additionalDiscount]);
 
   const gstAmount = useMemo(() => {
     return Math.round(totalBeforeGst * (gstPercent / 100));
@@ -181,7 +277,7 @@ export const Quotation: React.FC = () => {
     doc.text(`Quote ID: #QD-${Math.floor(Math.random()*10000)}`, 195, 71, { align: "right" });
 
     let currentY = 85;
-    let totalMosquitoNetInstall = 0;
+    let totalInstallationAmt = 0;
 
     rooms.forEach(room => {
       // Room Header
@@ -202,11 +298,8 @@ export const Quotation: React.FC = () => {
         else if (w.type === 'Roller Blind' || w.type === 'Mosquito Net') details.push(`${w.sqft} sqft`);
         else if (w.type === 'Rods Only') details.push(`${w.track_ft} ft Hardware`);
 
-        let windowSubtotal = calculateWindowTotal(w);
-        if (w.type === 'Mosquito Net') {
-          totalMosquitoNetInstall += (w.installation_cost || 0);
-          windowSubtotal -= (w.installation_cost || 0);
-        }
+        totalInstallationAmt += (w.installation_cost || 0);
+        let windowSubtotal = calculateWindowTotal(w) - (w.installation_cost || 0);
         
         return [
           idx + 1,
@@ -292,11 +385,11 @@ export const Quotation: React.FC = () => {
       doc.text(`- Rs. ${additionalDiscount.toLocaleString()}`, 195, currentY, { align: "right" });
     }
 
-    if (totalMosquitoNetInstall > 0) {
+    if (totalInstallationAmt > 0) {
       currentY += 6;
       doc.setTextColor(100);
-      doc.text("Mosquito Net Installation:", 140, currentY);
-      doc.text(`Rs. ${totalMosquitoNetInstall.toLocaleString()}`, 195, currentY, { align: "right" });
+      doc.text("Installation Charges:", 140, currentY);
+      doc.text(`Rs. ${totalInstallationAmt.toLocaleString()}`, 195, currentY, { align: "right" });
     }
 
     if (gstPercent > 0) {
@@ -343,20 +436,88 @@ export const Quotation: React.FC = () => {
       
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-slate-200 pb-8">
         <div>
-          <h2 className="text-3xl font-black text-[#002d62] tracking-tighter uppercase">Professional Quote</h2>
-          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Structured Room-wise Breakdown</p>
+          <h2 className="text-3xl font-black text-[#002d62] tracking-tighter uppercase">Quotation Studio</h2>
+          <div className="flex gap-4 mt-2">
+            <button 
+              onClick={resetForm}
+              className={`text-[10px] font-black uppercase tracking-[0.2em] pb-1 border-b-2 transition-all ${view === 'create' ? 'text-[#002d62] border-[#002d62]' : 'text-slate-400 border-transparent'}`}
+            >
+              Draft New Quote
+            </button>
+            <button 
+              onClick={() => setView('list')}
+              className={`text-[10px] font-black uppercase tracking-[0.2em] pb-1 border-b-2 transition-all ${view === 'list' ? 'text-[#002d62] border-[#002d62]' : 'text-slate-400 border-transparent'}`}
+            >
+              Saved Quotations ({savedQuotes.length})
+            </button>
+          </div>
         </div>
         <div className="flex gap-3">
-          <button 
-            onClick={handleDownloadQuotation}
-            className="px-8 py-4 bg-[#002d62] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-[#003d7a] transition-all flex items-center gap-3 active:scale-95"
-          >
-            <i className="fas fa-print"></i> Print Quotation
-          </button>
+          {view === 'create' && (
+            <>
+              <button 
+                onClick={handleSaveQuotation}
+                className="px-6 py-4 bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-600 transition-all flex items-center gap-3 active:scale-95"
+              >
+                <i className="fas fa-save"></i> Save Draft
+              </button>
+              <button 
+                onClick={handleDownloadQuotation}
+                className="px-8 py-4 bg-[#002d62] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-[#003d7a] transition-all flex items-center gap-3 active:scale-95"
+              >
+                <i className="fas fa-print"></i> Print Details
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+      {view === 'list' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-bottom-8">
+          {isLoading ? (
+            <div className="col-span-full py-20 text-center">
+              <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <p className="font-black text-slate-400 uppercase tracking-widest text-xs">Loading Quotations...</p>
+            </div>
+          ) : savedQuotes.length === 0 ? (
+            <div className="col-span-full py-20 text-center bg-white rounded-[3rem] border-2 border-dashed border-slate-100">
+               <i className="fas fa-folder-open text-slate-200 text-6xl mb-4"></i>
+               <p className="font-black text-slate-300 uppercase tracking-widest">No saved quotations yet</p>
+            </div>
+          ) : (
+            savedQuotes.map(quote => (
+              <div key={quote.id} className="bg-white rounded-[2rem] p-8 shadow-xl border border-slate-50 relative group">
+                <div className="absolute top-4 right-4 flex gap-2">
+                   <button onClick={() => deleteQuotation(quote.id)} className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100">
+                     <i className="fas fa-trash-alt text-xs"></i>
+                   </button>
+                </div>
+                <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-2">{quote.id}</div>
+                <h4 className="text-xl font-black text-[#002d62] mb-1">{quote.customer_name}</h4>
+                <p className="text-slate-400 text-xs font-bold mb-6">{quote.phone || 'No phone'}</p>
+                
+                <div className="flex justify-between items-end">
+                   <div>
+                     <div className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Total Value</div>
+                     <div className="text-2xl font-black text-[#002d62]">Rs. {quote.total_amount.toLocaleString()}</div>
+                   </div>
+                   <button 
+                     onClick={() => loadQuotation(quote)}
+                     className="px-6 py-3 bg-[#002d62] text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 shadow-lg active:scale-95 transition-all"
+                   >
+                     Reload Quote
+                   </button>
+                </div>
+                <div className="mt-6 pt-6 border-t border-slate-50 flex justify-between">
+                   <span className="text-[9px] font-bold text-slate-300 uppercase">{new Date(quote.date).toLocaleDateString()}</span>
+                   <span className="text-[9px] font-bold text-slate-300 uppercase">{quote.rooms.length} Rooms</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         
         {/* Left Column: Management */}
         <div className="lg:col-span-1 space-y-6">
@@ -729,6 +890,7 @@ export const Quotation: React.FC = () => {
         </div>
 
       </div>
-    </div>
-  );
+    )}
+  </div>
+);
 };

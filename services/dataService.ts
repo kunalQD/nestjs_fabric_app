@@ -1,5 +1,5 @@
 
-import { Order, OrderStatus, OrderBilling, WindowEntry } from '../types';
+import { Order, OrderStatus, OrderBilling, WindowEntry, Quotation } from '../types';
 
 const BASE_URL = 'https://fabric-calc-5uhi.onrender.com';
 const API_BASE = `${BASE_URL}/api`;
@@ -284,6 +284,61 @@ export const dataService = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(payment),
+      mode: 'cors'
+    });
+    await handleResponse(res);
+  },
+
+  getQuotations: async (search?: string): Promise<Quotation[]> => {
+    try {
+      const url = search 
+        ? `${API_BASE}/quotations/list?search=${encodeURIComponent(search)}` 
+        : `${API_BASE}/quotations/list`;
+
+      const res = await fetch(url, {
+        headers: { ...getAuthHeader() },
+        mode: 'cors'
+      });
+      
+      const data = await handleResponse(res);
+      return Array.isArray(data) ? data : (data.quotations || []);
+    } catch (err) {
+      console.error("Quotation Fetch Error:", err);
+      throw err;
+    }
+  },
+
+  getQuotationById: async (id: string): Promise<Quotation | undefined> => {
+    try {
+      const res = await fetch(`${API_BASE}/quotations/${id}`, {
+        headers: { ...getAuthHeader() },
+        mode: 'cors'
+      });
+      if (!res.ok) return undefined;
+      return await handleResponse(res);
+    } catch (err) {
+      return undefined;
+    }
+  },
+
+  saveQuotation: async (quotation: Quotation): Promise<void> => {
+    const isUpdate = !!quotation.id && !quotation.id.startsWith('temp_') && !quotation.id.includes('Date.now()');
+    const url = isUpdate ? `${API_BASE}/quotations/${quotation.id}` : `${API_BASE}/quotations`;
+    const method = isUpdate ? 'PUT' : 'POST';
+    
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(quotation),
+      mode: 'cors'
+    });
+    await handleResponse(res);
+  },
+
+  deleteQuotation: async (id: string): Promise<void> => {
+    const res = await fetch(`${API_BASE}/quotations/${id}`, { 
+      method: 'DELETE', 
+      headers: { ...getAuthHeader() },
       mode: 'cors'
     });
     await handleResponse(res);
