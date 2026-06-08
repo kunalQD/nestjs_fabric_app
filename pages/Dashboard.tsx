@@ -40,7 +40,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
   };
 
   useEffect(() => {
-    setLoading(true);
     const delayDebounceFn = setTimeout(() => {
       fetchData(search);
     }, 450); // 450ms debounce
@@ -121,14 +120,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
               <th className="px-6 md:px-8 py-5">Status</th>
               <th className="px-6 md:px-8 py-5">Timeline</th>
               <th className="px-6 md:px-8 py-5">Completed Date</th>
-              <th className="px-6 md:px-8 py-5">Assignment</th>
               <th className="px-6 md:px-8 py-5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {filteredOrders.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-wider text-[11px]">
+                <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-wider text-[11px]">
                   No matching orders found
                 </td>
               </tr>
@@ -150,18 +148,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
                   <td className="px-6 md:px-8 py-4">
                     <div className="font-bold text-emerald-600">
                       {order.completed_at ? new Date(order.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                    </div>
-                  </td>
-                  <td className="px-6 md:px-8 py-4">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[8px] font-black text-slate-400 uppercase">Tailor</span>
-                        <span className="text-[10px] font-black text-slate-700">{order.tailor || 'None'}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[8px] font-black text-[#c5a059] uppercase">Fitter</span>
-                        <span className="text-[10px] font-black text-[#c5a059]">{order.fitter || 'None'}</span>
-                      </div>
                     </div>
                   </td>
                   <td className="px-6 md:px-8 py-4 text-right">
