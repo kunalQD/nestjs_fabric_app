@@ -11,7 +11,6 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }) => {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [kpis, setKpis] = useState({
     orders: 0,
     fabric_pending: 0,
@@ -22,10 +21,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
+  const fetchData = async (searchQuery = '') => {
     try {
       const [orderList, stats] = await Promise.all([
-        dataService.getOrders(),
+        dataService.getOrders(searchQuery),
         dataService.getKPIs()
       ]);
       setOrders(orderList);
@@ -41,19 +40,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
   };
 
   useEffect(() => {
-    fetchData();
-    // Reduced frequency to improve background performance on mobile
-    const interval = setInterval(fetchData, 30000); 
+    setLoading(true);
+    const delayDebounceFn = setTimeout(() => {
+      fetchData(search);
+    }, 450); // 450ms debounce
+    return () => clearTimeout(delayDebounceFn);
+  }, [search]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!search) {
+        fetchData();
+      }
+    }, 30000); 
     return () => clearInterval(interval);
-  }, []);
+  }, [search]);
 
   const filteredOrders = orders.filter(o => 
     (o.customer_name || '').toLowerCase().includes(search.toLowerCase()) ||
     (o.phone || '').includes(search) ||
     (o.showroom || '').toLowerCase().includes(search.toLowerCase())
   );
-
-  const statuses = Object.values(OrderStatus);
 
   if (loading) {
     return (
@@ -80,29 +87,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
             <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-300"></i>
             <input 
               type="text" 
-              placeholder="Search clients..."
-              className="w-full md:w-64 pl-10 pr-6 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#002d62]/10 transition-all outline-none"
+              placeholder="Search clients, showroom, ids..."
+              className="w-full md:w-80 pl-10 pr-6 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#002d62]/10 transition-all outline-none"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex bg-slate-100 p-1 rounded-xl">
-            <button 
-              onClick={() => setViewMode('board')}
-              className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'board' ? 'bg-[#002d62] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              Workflow
-            </button>
-            <button 
-              onClick={() => setViewMode('list')}
-              className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'list' ? 'bg-[#002d62] text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              Order List
-            </button>
-          </div>
           <button 
-            onClick={fetchData}
-            className="hidden md:flex w-10 h-10 bg-slate-100 hover:bg-slate-200 rounded-xl items-center justify-center transition-all"
+            onClick={() => fetchData(search)}
+            className="flex w-10 h-10 bg-slate-100 hover:bg-slate-200 rounded-xl items-center justify-center transition-all"
           >
             <i className="fas fa-sync-alt text-slate-400 text-xs"></i>
           </button>
@@ -120,83 +113,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
         </div>
       </div>
 
-      {viewMode === 'board' ? (
-        <div className="kanban-scroll flex gap-4 md:gap-6 overflow-x-auto pb-6 items-start touch-pan-x cursor-grab active:cursor-grabbing">
-          {statuses.map(status => {
-            const statusOrders = filteredOrders.filter(o => o.status === status);
-            return (
-              <div key={status} className="min-w-[280px] md:min-w-[320px] max-w-[320px] flex-shrink-0">
-                <div className="flex justify-between items-center mb-4 px-2">
-                  <h3 className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">{status}</h3>
-                  <span className="bg-slate-200 text-slate-600 px-2.5 py-1 rounded-lg text-[9px] font-black">
-                    {statusOrders.length}
-                  </span>
-                </div>
-                <div className="space-y-4 min-h-[500px]">
-                  {statusOrders.length === 0 ? (
-                    <div className="border-2 border-dashed border-slate-100 rounded-[2rem] h-24 flex items-center justify-center opacity-40 bg-white/50">
-                      <p className="text-[8px] font-black uppercase tracking-widest">Stage Empty</p>
-                    </div>
-                  ) : (
-                    statusOrders.map(order => {
-                      const totalSqft = order.entries.reduce((sum, entry) => sum + (entry.sqft || 0), 0);
-                      return (
-                        <div 
-                          key={order.order_id} 
-                          onClick={() => onEditOrder(order.order_id)}
-                          className="bg-white p-4 md:p-5 rounded-[1.5rem] shadow-sm border border-slate-100 hover:shadow-xl hover:border-[#c5a059]/40 cursor-pointer transition-all group relative overflow-hidden"
-                        >
-                          <div className={`absolute top-0 left-0 w-1 md:w-1.5 h-full ${STATUS_COLORS[status] || 'bg-slate-300'}`}></div>
-                          <div className="mb-3">
-                            <h4 className="font-black text-slate-800 text-sm md:text-base group-hover:text-[#002d62] transition-colors tracking-tight truncate">
-                              {order.customer_name}
-                            </h4>
-                            <div className="flex justify-between items-center mt-1">
-                              <p className="text-[8px] md:text-[9px] font-black text-[#c5a059] uppercase tracking-widest">{order.showroom}</p>
-                              <p className="text-[8px] md:text-[9px] font-bold text-slate-400">#{order.order_id.substring(0,6)}</p>
-                            </div>
-                          </div>
-                          
-                          <div className="flex justify-between items-center pt-3 border-t border-slate-50">
-                            <div className="text-[8px] md:text-[9px] font-bold text-slate-400 flex items-center gap-1.5">
-                              <i className="fas fa-maximize text-[9px] md:text-[10px]"></i>
-                              {totalSqft > 0 ? `${totalSqft.toFixed(1)} SQFT` : 'TBD'}
-                            </div>
-                            <div className="text-right">
-                               {order.status === OrderStatus.COMPLETED && order.completed_at ? (
-                                 <p className="text-[8px] md:text-[9px] font-black text-emerald-600 flex items-center gap-1">
-                                   <i className="fas fa-check-double text-[8px]"></i>
-                                   {new Date(order.completed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                 </p>
-                               ) : (
-                                 <p className="text-[8px] md:text-[9px] font-black text-slate-700">{order.due_date ? new Date(order.due_date).toLocaleDateString('en-GB') : 'No Date'}</p>
-                               )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-x-auto">
-          <table className="w-full text-left text-xs min-w-[600px]">
-            <thead className="bg-slate-50 text-[#002d62] uppercase font-black tracking-widest text-[9px]">
+      <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-x-auto animate-in fade-in duration-300">
+        <table className="w-full text-left text-xs min-w-[600px]">
+          <thead className="bg-slate-50 text-[#002d62] uppercase font-black tracking-widest text-[9px]">
+            <tr>
+              <th className="px-6 md:px-8 py-5">Order Context</th>
+              <th className="px-6 md:px-8 py-5">Status</th>
+              <th className="px-6 md:px-8 py-5">Timeline</th>
+              <th className="px-6 md:px-8 py-5">Completed Date</th>
+              <th className="px-6 md:px-8 py-5">Assignment</th>
+              <th className="px-6 md:px-8 py-5 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {filteredOrders.length === 0 ? (
               <tr>
-                <th className="px-6 md:px-8 py-5">Order Context</th>
-                <th className="px-6 md:px-8 py-5">Status</th>
-                <th className="px-6 md:px-8 py-5">Timeline</th>
-                <th className="px-6 md:px-8 py-5">Completed Date</th>
-                <th className="px-6 md:px-8 py-5">Assignment</th>
-                <th className="px-6 md:px-8 py-5 text-right">Actions</th>
+                <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-wider text-[11px]">
+                  No matching orders found
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filteredOrders.map(order => (
+            ) : (
+              filteredOrders.map(order => (
                 <tr key={order.order_id} className="hover:bg-slate-50/50 transition-colors group">
                   <td className="px-6 md:px-8 py-4">
                     <div className="font-black text-slate-800 text-sm">{order.customer_name}</div>
@@ -236,11 +173,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
                     </button>
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
