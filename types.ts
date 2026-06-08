@@ -48,6 +48,7 @@ export interface Order {
   payments?: { amount: number; date: string; method: string }[];
   total_bill?: number;
   completed_at?: string;
+  delay_comment?: string;
 }
 
 export interface BillingLineItem {

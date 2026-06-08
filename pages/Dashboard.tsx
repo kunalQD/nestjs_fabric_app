@@ -21,6 +21,46 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
+  const [selectedOrderForDelay, setSelectedOrderForDelay] = useState<Order | null>(null);
+  const [pendingDueDate, setPendingDueDate] = useState<string>('');
+  const [delayComment, setDelayComment] = useState<string>('Delay due to Fabric');
+
+  const handleCancelDelay = () => {
+    setSelectedOrderForDelay(null);
+    setPendingDueDate('');
+  };
+
+  const handleSaveDelay = async () => {
+    if (!selectedOrderForDelay || !pendingDueDate) return;
+
+    try {
+      setLoading(true);
+      const fullOrder = await dataService.getOrderById(selectedOrderForDelay.order_id);
+      if (!fullOrder) {
+        alert("Order not found or backend could not be reached.");
+        return;
+      }
+
+      const updatedOrder = {
+        ...fullOrder,
+        due_date: pendingDueDate,
+        delay_comment: delayComment
+      };
+
+      await dataService.saveOrder(updatedOrder, fullOrder.entries || []);
+      
+      setSelectedOrderForDelay(null);
+      setPendingDueDate('');
+      setDelayComment('Delay due to Fabric');
+
+      await fetchData(search);
+    } catch (err) {
+      console.error("Error updating due date:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchData = async (searchQuery = '') => {
     try {
       const [orderList, stats] = await Promise.all([
@@ -143,7 +183,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
                     </span>
                   </td>
                   <td className="px-6 md:px-8 py-4">
-                    <div className="font-bold text-slate-700">{order.due_date ? new Date(order.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'TBD'}</div>
+                    <div className="flex flex-col gap-1.5 justify-center py-1">
+                      <input 
+                        type="date"
+                        value={order.due_date ? order.due_date.substring(0, 10) : ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const currentFormatted = order.due_date ? order.due_date.substring(0, 10) : '';
+                          if (val && val !== currentFormatted) {
+                            setSelectedOrderForDelay(order);
+                            setPendingDueDate(val);
+                            setDelayComment('Delay due to Fabric');
+                          }
+                        }}
+                        className="bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs text-slate-700 font-bold rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-[#002d62] outline-none cursor-pointer transition-colors max-w-[130px]"
+                      />
+                      {order.delay_comment && (
+                        <span className="text-[9px] text-amber-600 font-extrabold bg-amber-50 px-2 py-0.5 rounded border border-amber-100 max-w-[150px] truncate" title={order.delay_comment}>
+                          ⚠️ {order.delay_comment}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 md:px-8 py-4">
                     <div className="font-bold text-emerald-600">
@@ -164,6 +224,75 @@ export const Dashboard: React.FC<DashboardProps> = ({ onEditOrder, onAuthError }
           </tbody>
         </table>
       </div>
+
+      {/* Delay Reason Modal Popup */}
+      {selectedOrderForDelay && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-200">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-[#002d62]">Define Delay Reason</h3>
+                  <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mt-1">Due Date rescheduling confirmation</p>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <i className="fas fa-calendar-alt text-base"></i>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-2xl space-y-2 text-xs font-bold text-slate-600">
+                <div className="flex justify-between">
+                  <span>Client Name:</span>
+                  <span className="text-[#002d62]">{selectedOrderForDelay.customer_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Current Due:</span>
+                  <span className="text-slate-500">
+                    {selectedOrderForDelay.due_date ? new Date(selectedOrderForDelay.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'TBD'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>New Due:</span>
+                  <span className="text-[#002d62]">
+                    {new Date(pendingDueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Delay Comment / Category</label>
+                <select
+                  value={delayComment}
+                  onChange={(e) => setDelayComment(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 rounded-xl p-3 focus:ring-2 focus:ring-[#002d62]/10 outline-none transition-all cursor-pointer"
+                >
+                  <option value="Delay due to Fabric">1. Delay due to Fabric</option>
+                  <option value="Delay due to installation">2. Delay due to installation</option>
+                  <option value="Delay due to Stitching">3. Delay due to Stitching</option>
+                  <option value="Delay due to Customer">4. Delay due to Customer</option>
+                </select>
+              </div>
+
+              <div className="flex gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={handleCancelDelay}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-xs uppercase tracking-wider rounded-xl transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveDelay}
+                  className="flex-1 py-3 bg-[#002d62] hover:bg-[#001f42] text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md active:scale-95"
+                >
+                  Confirm & Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

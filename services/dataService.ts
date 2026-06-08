@@ -84,6 +84,7 @@ const mapBackendOrder = (o: any): Order => {
     fitter: o.fitter || '',
     created_at: o.created_at || new Date().toISOString(),
     completed_at: o.completed_at || o.CompletedAt || '',
+    delay_comment: o.delay_comment || '',
 
     payments: Array.isArray(o.payments)
       ? o.payments.map((p: any) => ({
