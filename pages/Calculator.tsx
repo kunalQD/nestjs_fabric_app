@@ -70,7 +70,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
     status: OrderStatus.FABRIC_PENDING,
     due_date: "",
     tailor: TAILORS[0],
-    fitter: FITTERS[0]
+    fitter: FITTERS[0],
+    completed_at: ""
   });
 
   const [entries, setEntries] = useState<WindowEntry[]>([]);
@@ -131,7 +132,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
           status: order.status,
           due_date: order.due_date,
           tailor: order.tailor || TAILORS[0],
-          fitter: order.fitter || FITTERS[0]
+          fitter: order.fitter || FITTERS[0],
+          completed_at: order.completed_at || ""
         });
 
         setEntries(order.entries || []);
@@ -379,6 +381,10 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
     setLoading(true);
 
+    const resolvedCompletedAt = customer.status === OrderStatus.COMPLETED
+      ? (customer.completed_at || new Date().toISOString())
+      : "";
+
     try {
       await dataService.saveOrder(
         {
@@ -392,7 +398,8 @@ export const Calculator: React.FC<CalculatorProps> = ({
           fitter: customer.fitter,
           payments,
           total_bill: totalBill,
-          order_id: orderId || undefined
+          order_id: orderId || undefined,
+          completed_at: resolvedCompletedAt
         },
         entries
       );
@@ -548,40 +555,44 @@ export const Calculator: React.FC<CalculatorProps> = ({
     doc.line(15, 38, 195, 38);
 
     // --- Production Context Box ---
+    const addressLines = doc.splitTextToSize(`Address: ${customer.address || 'N/A'}`, 90);
+    const boxHeightContext = Math.max(38, 34 + addressLines.length * 4);
+
     doc.setFillColor(bgGray[0], bgGray[1], bgGray[2]);
-    doc.roundedRect(15, 45, 180, 35, 5, 5, 'F');
+    doc.roundedRect(15, 45, 180, boxHeightContext, 5, 5, 'F');
     
     doc.setFontSize(8);
     doc.setTextColor(gold[0], gold[1], gold[2]);
     doc.setFont("helvetica", "bold");
-    doc.text("PRODUCTION CONTEXT", 25, 55);
+    doc.text("PRODUCTION CONTEXT", 25, 52);
     
-    doc.setFontSize(18);
+    doc.setFontSize(16);
     doc.setTextColor(navy[0], navy[1], navy[2]);
-    doc.text(customer.name || 'Jayaraj - Dynance', 25, 65);
+    doc.text(customer.name || 'N/A', 25, 61);
     
     doc.setFontSize(9);
     doc.setTextColor(slate[0], slate[1], slate[2]);
     doc.setFont("helvetica", "normal");
-    doc.text(customer.phone || '', 25, 72);
+    doc.text(customer.phone ? `Phone: ${customer.phone}` : 'Phone: N/A', 25, 67);
+    doc.text(addressLines, 25, 73);
 
     // Context Details (Columns)
     doc.setFontSize(7);
     doc.setTextColor(slate[0], slate[1], slate[2]);
     doc.setFont("helvetica", "bold");
-    doc.text("SHOWROOM", 120, 55);
-    doc.text("TARGET DATE", 160, 55);
-    doc.text("MASTER TAILOR", 120, 70);
-    doc.text("SITE FITTER", 160, 70);
+    doc.text("SHOWROOM", 120, 52);
+    doc.text("TARGET DATE", 160, 52);
+    doc.text("MASTER TAILOR", 120, 67);
+    doc.text("SITE FITTER", 160, 67);
 
     doc.setFontSize(10);
     doc.setTextColor(0);
-    doc.text(customer.showroom || 'N/A', 120, 61);
-    doc.text(customer.due_date || 'N/A', 160, 61);
-    doc.text(customer.tailor || 'N/A', 120, 76);
-    doc.text(customer.fitter || 'N/A', 160, 76);
+    doc.text(customer.showroom || 'N/A', 120, 58);
+    doc.text(customer.due_date || 'N/A', 160, 58);
+    doc.text(customer.tailor || 'N/A', 120, 73);
+    doc.text(customer.fitter || 'N/A', 160, 73);
 
-    let yPos = 90;
+    let yPos = 45 + boxHeightContext + 8;
 
     // --- Window Units (Boxes) ---
     entries.forEach((e, idx) => {
@@ -618,7 +629,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       // Row Data
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(11);
-      doc.text(e.window_name, 20, yPos + 18);
+      doc.text(e.is_double_layer ? `${e.window_name} (Double Curtain)` : e.window_name, 20, yPos + 18);
       
       doc.text(`${e.width}" x ${e.height}"`, 80, yPos + 18, { align: "center" });
       
@@ -634,9 +645,9 @@ export const Calculator: React.FC<CalculatorProps> = ({
       // Specification Badges / Extra Info
       doc.setFontSize(7);
       doc.setTextColor(slate[0], slate[1], slate[2]);
-      doc.text(`PANELS: ${e.panels}`, 20, yPos + 23);
+      doc.text(`PANELS: ${e.panels}${e.is_double_layer ? ' | DOUBLE CURTAIN: YES' : ' | DOUBLE CURTAIN: NO'}`, 20, yPos + 23);
       if (e.panel_split) {
-        doc.text(`SPLIT: ${e.panel_split}`, 45, yPos + 23);
+        doc.text(`SPLIT: ${e.panel_split}`, 75, yPos + 23);
       }
 
       let contentY = yPos + 26;
@@ -835,7 +846,14 @@ export const Calculator: React.FC<CalculatorProps> = ({
             <Input label="Phone" value={customer.phone} onChange={v => setCustomer({...customer, phone: v})} />
             <Input label="Site Address" value={customer.address} onChange={v => setCustomer({...customer, address: v})} />
             <Select label="Showroom" options={SHOWROOMS} value={customer.showroom} onChange={v => setCustomer({...customer, showroom: v})} />
-            <Select label="Stage" options={Object.values(OrderStatus)} value={customer.status} onChange={v => setCustomer({...customer, status: v as OrderStatus})} />
+            <Select label="Stage" options={Object.values(OrderStatus)} value={customer.status} onChange={v => {
+              const nextStatus = v as OrderStatus;
+              setCustomer(prev => ({
+                ...prev,
+                status: nextStatus,
+                completed_at: nextStatus === OrderStatus.COMPLETED ? (prev.completed_at || new Date().toISOString()) : ""
+              }));
+            }} />
             <Input type="date" label="Deadline" value={customer.due_date} onChange={v => setCustomer({...customer, due_date: v})} />
             <Select label="Tailor" options={TAILORS} value={customer.tailor} onChange={v => setCustomer({...customer, tailor: v})} />
             <Select label="Fitter" options={FITTERS} value={customer.fitter} onChange={v => setCustomer({...customer, fitter: v})} />

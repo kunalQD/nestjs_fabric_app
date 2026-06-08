@@ -83,6 +83,7 @@ const mapBackendOrder = (o: any): Order => {
     tailor: o.tailor || '',
     fitter: o.fitter || '',
     created_at: o.created_at || new Date().toISOString(),
+    completed_at: o.completed_at || o.CompletedAt || '',
 
     payments: Array.isArray(o.payments)
       ? o.payments.map((p: any) => ({
