@@ -629,7 +629,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       // Row Data
       doc.setTextColor(30, 41, 59);
       doc.setFontSize(11);
-      doc.text(e.is_double_layer ? `${e.window_name} (Double Curtain)` : e.window_name, 20, yPos + 18);
+      doc.text(e.window_name, 20, yPos + 18);
       
       doc.text(`${e.width}" x ${e.height}"`, 80, yPos + 18, { align: "center" });
       
@@ -645,7 +645,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
       // Specification Badges / Extra Info
       doc.setFontSize(7);
       doc.setTextColor(slate[0], slate[1], slate[2]);
-      doc.text(`PANELS: ${e.panels}${e.is_double_layer ? ' | DOUBLE CURTAIN: YES' : ' | DOUBLE CURTAIN: NO'}`, 20, yPos + 23);
+      doc.text(`PANELS: ${e.panels}${e.is_double_layer ? ' | DOUBLE CURTAIN' : ''}`, 20, yPos + 23);
       if (e.panel_split) {
         doc.text(`SPLIT: ${e.panel_split}`, 75, yPos + 23);
       }
