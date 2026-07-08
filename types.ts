@@ -78,23 +78,12 @@ export interface OrderBilling {
 export interface QuotationItem {
   id: string;
   name: string;
-  type: 'Curtain' | 'Roman Blind' | 'Roller Blind' | 'Mosquito Net' | 'Rods Only' | 'Fabric Only' | 'Misc';
-  quantity: number;
-  fabric_qty: number;
-  fabric_rate: number;
-  panels: number;
-  stitching_rate: number;
-  track_ft: number;
-  track_rate: number;
-  sqft: number;
-  blind_rate: number;
-  mechanism_cost: number;
-  installation_cost: number;
+  type: 'Curtain Fabric' | 'Blinds' | 'Tracks' | 'Lining' | 'Sofa Labour' | 'Sofa Fabric' | 'Stitching Charges' | 'Installation Charges' | 'Other';
+  qty: number;
+  unit: string;
+  rate: number;
+  discount_percent: number;
   comment?: string;
-  include_stitching: boolean;
-  include_fabric: boolean;
-  include_hardware: boolean;
-  is_double_curtain: boolean;
 }
 
 export interface MiscCharge {
