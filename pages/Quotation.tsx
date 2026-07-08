@@ -1,8 +1,7 @@
-
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { QuotationRoom, QuotationWindow, MiscCharge, Quotation as QType } from '../types';
+import { QuotationItem, MiscCharge, Quotation as QType } from '../types';
 import { dataService } from '../services/dataService';
 
 export const Quotation: React.FC = () => {
@@ -16,13 +15,13 @@ export const Quotation: React.FC = () => {
     phone: '',
   });
 
-  const [rooms, setRooms] = useState<QuotationRoom[]>([]);
+  const [items, setItems] = useState<QuotationItem[]>([]);
   const [miscCharges, setMiscCharges] = useState<MiscCharge[]>([]);
   const [fabricDiscount, setFabricDiscount] = useState<number>(0);
   const [additionalDiscount, setAdditionalDiscount] = useState<number>(0);
   const [gstPercent, setGstPercent] = useState<number>(0);
   const [terms, setTerms] = useState<string>(
-    "1. 50% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back.\n4. Subject to Jaipur Jurisdiction."
+    "1. 50% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back."
   );
 
   const fetchQuotations = useCallback(async () => {
@@ -41,6 +40,74 @@ export const Quotation: React.FC = () => {
     fetchQuotations();
   }, [fetchQuotations]);
 
+  const calculateItemTotal = useCallback((item: QuotationItem) => {
+    let total = 0;
+    const factor = item.is_double_curtain ? 2 : 1;
+    
+    if (item.type === 'Curtain' || item.type === 'Fabric Only') {
+      if (item.include_fabric) total += (item.fabric_qty || 0) * (item.fabric_rate || 0) * factor;
+      if (item.type === 'Curtain' && item.include_stitching) total += (item.panels || 0) * (item.stitching_rate || 0) * factor;
+      if (item.type === 'Curtain' && item.include_hardware) total += (item.track_ft || 0) * (item.track_rate || 0);
+    } else if (item.type === 'Roman Blind') {
+      if (item.include_fabric) total += (item.fabric_qty || 0) * (item.fabric_rate || 0) * factor;
+      if (item.include_stitching) total += (item.panels || 0) * (item.stitching_rate || 0) * factor;
+      total += (item.mechanism_cost || 0);
+      if (item.include_hardware) total += (item.track_ft || 0) * (item.track_rate || 0);
+    } else if (item.type === 'Roller Blind' || item.type === 'Mosquito Net') {
+      total += (item.sqft || 0) * (item.blind_rate || 0);
+      total += (item.mechanism_cost || 0);
+    } else if (item.type === 'Rods Only') {
+      total += (item.track_ft || 0) * (item.track_rate || 0);
+    } else if (item.type === 'Misc') {
+      total += (item.fabric_rate || 0); // Reuse fabric_rate for flat misc amount
+    }
+
+    if (item.type !== 'Fabric Only' && item.type !== 'Misc') {
+      total += (item.installation_cost || 0);
+    }
+    
+    return total * (item.quantity || 1);
+  }, []);
+
+  const fabricOnlyTotal = useMemo(() => {
+    return items.reduce((sum, item) => {
+      const factor = item.is_double_curtain ? 2 : 1;
+      if ((item.type === 'Curtain' || item.type === 'Fabric Only' || item.type === 'Roman Blind') && item.include_fabric) {
+        return sum + (item.fabric_qty || 0) * (item.fabric_rate || 0) * factor * (item.quantity || 1);
+      }
+      return sum;
+    }, 0);
+  }, [items]);
+
+  const rawGrandTotal = useMemo(() => {
+    const itemsTotal = items.reduce((sum, item) => {
+      const baseTotalWithoutInstallation = calculateItemTotal(item) - ((item.installation_cost || 0) * (item.quantity || 1));
+      return sum + baseTotalWithoutInstallation;
+    }, 0);
+    const miscTotal = miscCharges.reduce((sum, charge) => sum + charge.amount, 0);
+    return itemsTotal + miscTotal;
+  }, [items, miscCharges, calculateItemTotal]);
+
+  const totalInstallation = useMemo(() => {
+    return items.reduce((sum, item) => sum + (item.installation_cost || 0) * (item.quantity || 1), 0);
+  }, [items]);
+
+  const fabricDiscountAmount = useMemo(() => {
+    return Math.round(fabricOnlyTotal * (fabricDiscount / 100));
+  }, [fabricOnlyTotal, fabricDiscount]);
+
+  const totalBeforeGst = useMemo(() => {
+    return Math.max(0, rawGrandTotal + totalInstallation - fabricDiscountAmount - additionalDiscount);
+  }, [rawGrandTotal, totalInstallation, fabricDiscountAmount, additionalDiscount]);
+
+  const gstAmount = useMemo(() => {
+    return Math.round(totalBeforeGst * (gstPercent / 100));
+  }, [totalBeforeGst, gstPercent]);
+
+  const finalTotal = useMemo(() => {
+    return totalBeforeGst + gstAmount;
+  }, [totalBeforeGst, gstAmount]);
+
   const handleSaveQuotation = async () => {
     if (!customer.name) {
       alert("Please enter customer name before saving.");
@@ -52,7 +119,7 @@ export const Quotation: React.FC = () => {
       customer_name: customer.name,
       phone: customer.phone,
       date: new Date().toISOString(),
-      rooms,
+      items,
       misc_charges: miscCharges,
       fabric_discount_percent: fabricDiscount,
       additional_discount: additionalDiscount,
@@ -75,12 +142,22 @@ export const Quotation: React.FC = () => {
   const loadQuotation = (q: QType) => {
     setCurrentId(q.id);
     setCustomer({ name: q.customer_name, phone: q.phone });
-    setRooms(q.rooms);
-    setMiscCharges(q.misc_charges);
-    setFabricDiscount(q.fabric_discount_percent);
-    setAdditionalDiscount(q.additional_discount);
-    setGstPercent(q.gst_percent);
-    setTerms(q.terms_conditions || "");
+    
+    // Backward compatibility: map old style rooms structure to product level items
+    const loadedItems: QuotationItem[] = q.items || (q as any).rooms?.flatMap((r: any) => 
+      r.windows?.map((w: any) => ({
+        ...w,
+        quantity: w.quantity || 1,
+        comment: w.comment || `Room: ${r.name}`
+      }))
+    ) || [];
+
+    setItems(loadedItems);
+    setMiscCharges(q.misc_charges || []);
+    setFabricDiscount(q.fabric_discount_percent || 0);
+    setAdditionalDiscount(q.additional_discount || 0);
+    setGstPercent(q.gst_percent || 0);
+    setTerms(q.terms_conditions || "1. 50% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back.");
     setView('create');
   };
 
@@ -98,34 +175,23 @@ export const Quotation: React.FC = () => {
   const resetForm = () => {
     setCurrentId(null);
     setCustomer({ name: '', phone: '' });
-    setRooms([]);
+    setItems([]);
     setMiscCharges([]);
     setFabricDiscount(0);
     setAdditionalDiscount(0);
     setGstPercent(0);
     setView('create');
   };
-  
-  const handleAddRoom = () => {
-    const roomName = prompt("Enter Room Name (e.g. Master Bedroom):");
-    if (!roomName) return;
-    
-    const newRoom: QuotationRoom = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: roomName,
-      windows: []
-    };
-    setRooms([...rooms, newRoom]);
-  };
 
-  const handleAddWindow = (roomId: string) => {
-    const windowName = prompt("Enter Window Name (e.g. Main Window):");
-    if (!windowName) return;
+  const handleAddItem = () => {
+    const itemName = prompt("Enter Product / Treatment Name (e.g. Master Bedroom Curtains, Living Room Blind):");
+    if (!itemName) return;
 
-    const newWindow: QuotationWindow = {
+    const newItem: QuotationItem = {
       id: Math.random().toString(36).substr(2, 9),
-      name: windowName,
+      name: itemName,
       type: 'Curtain',
+      quantity: 1,
       fabric_qty: 0,
       fabric_rate: 0,
       panels: 1,
@@ -143,104 +209,39 @@ export const Quotation: React.FC = () => {
       comment: ''
     };
 
-    setRooms(rooms.map(room => {
-      if (room.id === roomId) {
-        return { ...room, windows: [...room.windows, newWindow] };
-      }
-      return room;
-    }));
+    setItems([...items, newItem]);
   };
 
-  const updateWindow = (roomId: string, windowId: string, updates: Partial<QuotationWindow>) => {
-    setRooms(rooms.map(room => {
-      if (room.id === roomId) {
-        return {
-          ...room,
-          windows: room.windows.map(w => w.id === windowId ? { ...w, ...updates } : w)
-        };
-      }
-      return room;
-    }));
+  const updateItem = (id: string, updates: Partial<QuotationItem>) => {
+    setItems(items.map(item => item.id === id ? { ...item, ...updates } : item));
   };
 
-  const calculateWindowTotal = (w: QuotationWindow) => {
-    let total = 0;
-    const factor = w.is_double_curtain ? 2 : 1;
-    
-    if (w.type === 'Curtain' || w.type === 'Fabric Only') {
-      if (w.include_fabric) total += (w.fabric_qty || 0) * (w.fabric_rate || 0) * factor;
-      if (w.type === 'Curtain' && w.include_stitching) total += (w.panels || 0) * (w.stitching_rate || 0) * factor;
-      if (w.type === 'Curtain' && w.include_hardware) total += (w.track_ft || 0) * (w.track_rate || 0);
-    } else if (w.type === 'Roman Blind') {
-      if (w.include_fabric) total += (w.fabric_qty || 0) * (w.fabric_rate || 0) * factor;
-      if (w.include_stitching) total += (w.panels || 0) * (w.stitching_rate || 0) * factor;
-      total += (w.mechanism_cost || 0);
-      if (w.include_hardware) total += (w.track_ft || 0) * (w.track_rate || 0);
-    } else if (w.type === 'Roller Blind' || w.type === 'Mosquito Net') {
-      total += (w.sqft || 0) * (w.blind_rate || 0);
-      total += (w.mechanism_cost || 0);
-    } else if (w.type === 'Rods Only') {
-      total += (w.track_ft || 0) * (w.track_rate || 0);
-    } else if (w.type === 'Misc') {
-      total += (w.fabric_rate || 0); // Reuse fabric_rate for flat misc amount
-    }
-
-    if (w.type !== 'Fabric Only' && w.type !== 'Misc') {
-      total += (w.installation_cost || 0);
-    }
-    
-    return total;
-  };
-
-  const fabricOnlyTotal = useMemo(() => {
-    return rooms.reduce((sum, room) => 
-      sum + room.windows.reduce((wSum, w) => {
-        const factor = w.is_double_curtain ? 2 : 1;
-        if ((w.type === 'Curtain' || w.type === 'Fabric Only' || w.type === 'Roman Blind') && w.include_fabric) {
-          return wSum + (w.fabric_qty || 0) * (w.fabric_rate || 0) * factor;
-        }
-        return wSum;
-      }, 0)
-    , 0);
-  }, [rooms]);
-
-  const rawGrandTotal = useMemo(() => {
-    const roomsTotal = rooms.reduce((sum, room) => 
-      sum + room.windows.reduce((wSum, w) => {
-        // Exclude installation from "Estimate Total" if we want it separate
-        return wSum + (calculateWindowTotal(w) - (w.installation_cost || 0));
-      }, 0)
-    , 0);
-    const miscTotal = miscCharges.reduce((sum, charge) => sum + charge.amount, 0);
-    return roomsTotal + miscTotal;
-  }, [rooms, miscCharges]);
-
-  const totalInstallation = useMemo(() => {
-    return rooms.reduce((sum, room) => 
-      sum + room.windows.reduce((wSum, w) => wSum + (w.installation_cost || 0), 0)
-    , 0);
-  }, [rooms]);
-
-  const fabricDiscountAmount = useMemo(() => {
-    return Math.round(fabricOnlyTotal * (fabricDiscount / 100));
-  }, [fabricOnlyTotal, fabricDiscount]);
-
-  const totalBeforeGst = useMemo(() => {
-    return Math.max(0, rawGrandTotal + totalInstallation - fabricDiscountAmount - additionalDiscount);
-  }, [rawGrandTotal, totalInstallation, fabricDiscountAmount, additionalDiscount]);
-
-  const gstAmount = useMemo(() => {
-    return Math.round(totalBeforeGst * (gstPercent / 100));
-  }, [totalBeforeGst, gstPercent]);
-
-  const finalTotal = useMemo(() => {
-    return totalBeforeGst + gstAmount;
-  }, [totalBeforeGst, gstAmount]);
-
-  const handleDownloadQuotation = useCallback(() => {
+  const handleDownloadPDF = useCallback((pdfType: 'quotation' | 'delivery_challan', overrideQuote?: QType) => {
     const doc = new jsPDF();
     const navy: [number, number, number] = [0, 45, 98];
     
+    const currentCustomer = overrideQuote ? { name: overrideQuote.customer_name, phone: overrideQuote.phone } : customer;
+    
+    // Backward-compatible loading for older saved quotations without items array
+    let currentItems: QuotationItem[] = [];
+    if (overrideQuote) {
+      currentItems = overrideQuote.items || (overrideQuote as any).rooms?.flatMap((r: any) => 
+        r.windows?.map((w: any) => ({
+          ...w,
+          quantity: w.quantity || 1,
+          comment: w.comment || `Room: ${r.name}`
+        }))
+      ) || [];
+    } else {
+      currentItems = items;
+    }
+
+    const currentMiscCharges = overrideQuote ? overrideQuote.misc_charges || [] : miscCharges;
+    const currentFabricDiscount = overrideQuote ? overrideQuote.fabric_discount_percent || 0 : fabricDiscount;
+    const currentAdditionalDiscount = overrideQuote ? overrideQuote.additional_discount || 0 : additionalDiscount;
+    const currentGstPercent = overrideQuote ? overrideQuote.gst_percent || 0 : gstPercent;
+    const currentTerms = overrideQuote ? overrideQuote.terms_conditions || terms : terms;
+
     // Header
     doc.setFillColor(navy[0], navy[1], navy[2]);
     doc.rect(0, 0, 210, 40, 'F');
@@ -248,19 +249,23 @@ export const Quotation: React.FC = () => {
     doc.setFontSize(28);
     doc.setTextColor(255);
     doc.setFont("helvetica", "bold");
-    doc.text("QUILT & DRAPES", 105, 20, { align: "center" });
+    doc.text("QUILT & DRAPES", 105, 18, { align: "center" });
     
     doc.setFontSize(9);
     doc.setTextColor(200);
     doc.setFont("helvetica", "normal");
-    doc.text("F A B R I C A T I O N S   &   I N T E R I O R S", 105, 28, { align: "center" });
-    doc.text("Professional Estimation Portal", 105, 33, { align: "center" });
+    doc.text("F A B R I C A T I O N S   &   I N T E R I O R S", 105, 26, { align: "center" });
+    
+    doc.setFontSize(14);
+    doc.setTextColor(255);
+    doc.setFont("helvetica", "bold");
+    doc.text(pdfType === 'quotation' ? "ESTIMATED QUOTATION" : "DELIVERY CHALLAN", 105, 34, { align: "center" });
 
-    // Info Section
+    // Customer / Info Section
     doc.setTextColor(navy[0], navy[1], navy[2]);
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text("CUSTOMER DETAILS", 15, 55);
+    doc.text(pdfType === 'quotation' ? "CUSTOMER DETAILS" : "DELIVERY TO", 15, 55);
     
     doc.setDrawColor(navy[0], navy[1], navy[2]);
     doc.setLineWidth(0.5);
@@ -269,167 +274,250 @@ export const Quotation: React.FC = () => {
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(0);
-    doc.text(`Name: ${customer.name || 'Valued Client'}`, 15, 65);
-    doc.text(`Phone: ${customer.phone || 'N/A'}`, 15, 71);
+    doc.text(`Name: ${currentCustomer.name || 'Valued Client'}`, 15, 65);
+    doc.text(`Phone: ${currentCustomer.phone || 'N/A'}`, 15, 71);
     
     doc.setFont("helvetica", "bold");
     doc.text(`Date: ${new Date().toLocaleDateString('en-GB')}`, 195, 65, { align: "right" });
-    doc.text(`Quote ID: #QD-${Math.floor(Math.random()*10000)}`, 195, 71, { align: "right" });
+    
+    const uniqueId = overrideQuote ? overrideQuote.id : (currentId || 'TEMP');
+    doc.text(`${pdfType === 'quotation' ? 'Quote' : 'Challan'} ID: #${uniqueId}`, 195, 71, { align: "right" });
 
     let currentY = 85;
-    let totalInstallationAmt = 0;
 
-    rooms.forEach(room => {
-      // Room Header
-      doc.setFillColor(navy[0], navy[1], navy[2]);
-      doc.roundedRect(15, currentY, 180, 10, 2, 2, 'F');
-      doc.setTextColor(255);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.text(`ROOM: ${room.name.toUpperCase()}`, 20, currentY + 7);
-      
-      currentY += 12;
+    // Table Columns
+    let tableHead: string[][];
+    let tableBody: any[][];
 
-      const tableData = room.windows.map((w, idx) => {
+    if (pdfType === 'quotation') {
+      tableHead = [['SNo', 'Product Item / Description', 'Type', 'Qty', 'Configuration & Notes', 'Subtotal']];
+      tableBody = currentItems.map((item, idx) => {
         let details = [];
-        if (w.is_double_curtain) details.push('Double Layer');
-        if (w.type === 'Curtain') details.push(`${w.fabric_qty}m Fab`, `${w.panels} Pnl`);
-        else if (w.type === 'Roman Blind') details.push(`${w.fabric_qty}m Fab`, 'Roman Mechanism');
-        else if (w.type === 'Roller Blind' || w.type === 'Mosquito Net') details.push(`${w.sqft} sqft`);
-        else if (w.type === 'Rods Only') details.push(`${w.track_ft} ft Hardware`);
+        if (item.is_double_curtain) details.push('Double Layer');
+        
+        if (item.type === 'Curtain') {
+          details.push(`${item.fabric_qty}m Fab`, `${item.panels} Pnl`);
+        } else if (item.type === 'Roman Blind') {
+          details.push(`${item.fabric_qty}m Fab`, 'Roman Mech');
+        } else if (item.type === 'Roller Blind' || item.type === 'Mosquito Net') {
+          details.push(`${item.sqft} sqft`);
+        } else if (item.type === 'Rods Only') {
+          details.push(`${item.track_ft} ft Hardware`);
+        } else if (item.type === 'Misc') {
+          details.push('Flat custom charge');
+        }
 
-        totalInstallationAmt += (w.installation_cost || 0);
-        let windowSubtotal = calculateWindowTotal(w) - (w.installation_cost || 0);
+        if (item.comment) details.push(`Note: ${item.comment}`);
+        
+        const itemSubtotal = calculateItemTotal(item) - ((item.installation_cost || 0) * (item.quantity || 1));
         
         return [
           idx + 1,
-          `${w.name}`,
-          w.type,
+          item.name,
+          item.type,
+          item.quantity,
           details.join(', '),
-          `Rs. ${windowSubtotal.toLocaleString()}`
+          `Rs. ${itemSubtotal.toLocaleString()}`
         ];
       });
-
-      autoTable(doc, {
-        startY: currentY,
-        head: [['SNo', 'Element', 'Type', 'Description', 'Subtotal']],
-        body: tableData,
-        theme: 'grid',
-        headStyles: { fillColor: [70, 70, 70], fontSize: 9, fontStyle: 'bold' },
-        bodyStyles: { fontSize: 9, textColor: [50, 50, 50] },
-        columnStyles: {
-          4: { halign: 'right', fontStyle: 'bold' }
-        },
-        margin: { left: 15, right: 15 },
-        didDrawPage: (data) => {
-          currentY = data.cursor?.y || currentY;
-        }
+    } else {
+      // Delivery Challan
+      tableHead = [['SNo', 'Product Item / Description', 'Type', 'Quantity Delivered', 'Notes & Room Placement']];
+      tableBody = currentItems.map((item, idx) => {
+        const details = [];
+        if (item.is_double_curtain) details.push('Double Layer');
+        if (item.comment) details.push(item.comment);
+        return [
+          idx + 1,
+          item.name,
+          item.type,
+          `${item.quantity} Unit(s)`,
+          details.join(', ') || 'N/A'
+        ];
       });
-      
-      currentY += 12;
-      
-      if (currentY > 250) {
-        doc.addPage();
-        currentY = 20;
+    }
+
+    autoTable(doc, {
+      startY: currentY,
+      head: tableHead,
+      body: tableBody,
+      theme: 'grid',
+      headStyles: { fillColor: navy, fontSize: 9, fontStyle: 'bold' },
+      bodyStyles: { fontSize: 9, textColor: [50, 50, 50] },
+      columnStyles: pdfType === 'quotation' ? {
+        3: { halign: 'center' },
+        5: { halign: 'right', fontStyle: 'bold' }
+      } : {
+        3: { halign: 'center', fontStyle: 'bold' }
+      },
+      margin: { left: 15, right: 15 },
+      didDrawPage: (data) => {
+        currentY = data.cursor?.y || currentY;
       }
     });
 
-    if (miscCharges.length > 0) {
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(navy[0], navy[1], navy[2]);
-      doc.text("MISCELLANEOUS / OTHERS", 15, currentY);
-      currentY += 5;
-      
-      autoTable(doc, {
-        startY: currentY,
-        head: [['Description', 'Amount']],
-        body: miscCharges.map(m => [m.description, `Rs. ${m.amount.toLocaleString()}`]),
-        theme: 'striped',
-        margin: { left: 15, right: 15 },
-        columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
-        didDrawPage: (data) => {
-          currentY = data.cursor?.y || currentY;
+    currentY += 12;
+
+    if (pdfType === 'quotation') {
+      // Miscellaneous Charges if any
+      if (currentMiscCharges.length > 0) {
+        if (currentY > 230) {
+          doc.addPage();
+          currentY = 20;
         }
-      });
-      currentY += 15;
-    }
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(navy[0], navy[1], navy[2]);
+        doc.text("MISCELLANEOUS / OTHERS", 15, currentY);
+        currentY += 5;
+        
+        autoTable(doc, {
+          startY: currentY,
+          head: [['Description', 'Amount']],
+          body: currentMiscCharges.map(m => [m.description, `Rs. ${m.amount.toLocaleString()}`]),
+          theme: 'striped',
+          margin: { left: 15, right: 15 },
+          columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
+          didDrawPage: (data) => {
+            currentY = data.cursor?.y || currentY;
+          }
+        });
+        currentY += 15;
+      }
 
-    // Totals Section
-    if (currentY > 230) {
-      doc.addPage();
-      currentY = 30;
-    }
+      // Calculations of Totals
+      const currentFabricOnlyTotal = currentItems.reduce((sum, item) => {
+        const factor = item.is_double_curtain ? 2 : 1;
+        if ((item.type === 'Curtain' || item.type === 'Fabric Only' || item.type === 'Roman Blind') && item.include_fabric) {
+          return sum + (item.fabric_qty || 0) * (item.fabric_rate || 0) * factor * (item.quantity || 1);
+        }
+        return sum;
+      }, 0);
 
-    doc.setDrawColor(200);
-    doc.line(120, currentY, 195, currentY);
-    currentY += 8;
+      const currentRawGrandTotal = currentItems.reduce((sum, item) => {
+        const baseTotalWithoutInstallation = calculateItemTotal(item) - ((item.installation_cost || 0) * (item.quantity || 1));
+        return sum + baseTotalWithoutInstallation;
+      }, 0) + currentMiscCharges.reduce((sum, charge) => sum + charge.amount, 0);
 
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(100);
-    doc.text("Estimate Total:", 140, currentY);
-    doc.text(`Rs. ${rawGrandTotal.toLocaleString()}`, 195, currentY, { align: "right" });
-    
-    if (fabricDiscount > 0) {
-      currentY += 6;
-      doc.setTextColor(200, 0, 0);
-      doc.text(`Fabric Discount (${fabricDiscount}%):`, 140, currentY);
-      doc.text(`- Rs. ${fabricDiscountAmount.toLocaleString()}`, 195, currentY, { align: "right" });
-    }
-    
-    if (additionalDiscount > 0) {
-      currentY += 6;
-      doc.setTextColor(200, 0, 0);
-      doc.text("Additional Discount:", 140, currentY);
-      doc.text(`- Rs. ${additionalDiscount.toLocaleString()}`, 195, currentY, { align: "right" });
-    }
+      const currentTotalInstallationAmt = currentItems.reduce((sum, item) => sum + (item.installation_cost || 0) * (item.quantity || 1), 0);
+      const currentFabricDiscountAmount = Math.round(currentFabricOnlyTotal * (currentFabricDiscount / 100));
+      const currentTotalBeforeGst = Math.max(0, currentRawGrandTotal + currentTotalInstallationAmt - currentFabricDiscountAmount - currentAdditionalDiscount);
+      const currentGstAmount = Math.round(currentTotalBeforeGst * (currentGstPercent / 100));
+      const currentFinalTotal = currentTotalBeforeGst + currentGstAmount;
 
-    if (totalInstallationAmt > 0) {
-      currentY += 6;
-      doc.setTextColor(100);
-      doc.text("Installation Charges:", 140, currentY);
-      doc.text(`Rs. ${totalInstallationAmt.toLocaleString()}`, 195, currentY, { align: "right" });
-    }
+      if (currentY > 210) {
+        doc.addPage();
+        currentY = 30;
+      }
 
-    if (gstPercent > 0) {
-      currentY += 6;
-      doc.setTextColor(navy[0], navy[1], navy[2]);
-      doc.setFont("helvetica", "bold");
-      doc.text(`GST (${gstPercent}%):`, 140, currentY);
-      doc.text(`Rs. ${gstAmount.toLocaleString()}`, 195, currentY, { align: "right" });
+      doc.setDrawColor(200);
+      doc.line(120, currentY, 195, currentY);
+      currentY += 8;
+
+      doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
+      doc.setTextColor(100);
+      doc.text("Estimate Total:", 140, currentY);
+      doc.text(`Rs. ${currentRawGrandTotal.toLocaleString()}`, 195, currentY, { align: "right" });
+      
+      if (currentFabricDiscount > 0) {
+        currentY += 6;
+        doc.setTextColor(200, 0, 0);
+        doc.text(`Fabric Discount (${currentFabricDiscount}%):`, 140, currentY);
+        doc.text(`- Rs. ${currentFabricDiscountAmount.toLocaleString()}`, 195, currentY, { align: "right" });
+      }
+      
+      if (currentAdditionalDiscount > 0) {
+        currentY += 6;
+        doc.setTextColor(200, 0, 0);
+        doc.text("Additional Discount:", 140, currentY);
+        doc.text(`- Rs. ${currentAdditionalDiscount.toLocaleString()}`, 195, currentY, { align: "right" });
+      }
+
+      if (currentTotalInstallationAmt > 0) {
+        currentY += 6;
+        doc.setTextColor(100);
+        doc.text("Installation Charges:", 140, currentY);
+        doc.text(`Rs. ${currentTotalInstallationAmt.toLocaleString()}`, 195, currentY, { align: "right" });
+      }
+
+      if (currentGstPercent > 0) {
+        currentY += 6;
+        doc.setTextColor(navy[0], navy[1], navy[2]);
+        doc.setFont("helvetica", "bold");
+        doc.text(`GST (${currentGstPercent}%):`, 140, currentY);
+        doc.text(`Rs. ${currentGstAmount.toLocaleString()}`, 195, currentY, { align: "right" });
+        doc.setFont("helvetica", "normal");
+      }
+
+      currentY += 10;
+      doc.setFillColor(navy[0], navy[1], navy[2]);
+      doc.rect(130, currentY - 5, 65, 12, 'F');
+      doc.setTextColor(255);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("FINAL TOTAL:", 135, currentY + 3);
+      doc.text(`Rs. ${currentFinalTotal.toLocaleString()}`, 190, currentY + 3, { align: "right" });
+
+      // Terms
+      currentY = Math.max(currentY + 25, 235);
+      doc.setTextColor(50);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("TERMS & CONDITIONS", 15, currentY);
+      
+      doc.setDrawColor(navy[0], navy[1], navy[2]);
+      doc.setLineWidth(0.3);
+      doc.line(15, currentY + 1.5, 50, currentY + 1.5);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      const splitTerms = doc.splitTextToSize(currentTerms, 180);
+      doc.text(splitTerms, 15, currentY + 8);
+    } else {
+      // Delivery Challan Footer
+      if (currentY > 210) {
+        doc.addPage();
+        currentY = 30;
+      }
+
+      doc.setTextColor(50);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("TERMS OF DELIVERY", 15, currentY);
+      
+      doc.setDrawColor(navy[0], navy[1], navy[2]);
+      doc.setLineWidth(0.3);
+      doc.line(15, currentY + 1.5, 50, currentY + 1.5);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(100);
+      doc.text([
+        "1. Received the above mentioned items/materials in good condition.",
+        "2. Any physical damage or discrepancy must be reported at the time of delivery/installation.",
+        "3. Installation will be scheduled as per previously mutually agreed dates.",
+      ], 15, currentY + 8);
+
+      currentY += 35;
+
+      // Signature blocks
+      doc.setDrawColor(180);
+      doc.setLineWidth(0.5);
+      doc.line(15, currentY + 15, 75, currentY + 15);
+      doc.line(135, currentY + 15, 195, currentY + 15);
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(50);
+      doc.text("Customer's Signature & Date", 15, currentY + 20);
+      doc.text("For Quilt & Drapes (Auth. Signatory)", 135, currentY + 20);
     }
-
-    currentY += 10;
-    doc.setFillColor(navy[0], navy[1], navy[2]);
-    doc.rect(130, currentY - 5, 65, 12, 'F');
-    doc.setTextColor(255);
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("FINAL TOTAL:", 135, currentY + 3);
-    doc.text(`Rs. ${finalTotal.toLocaleString()}`, 190, currentY + 3, { align: "right" });
-
-    // Terms
-    currentY = Math.max(currentY + 30, 240);
-    doc.setTextColor(50);
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
-    doc.text("TERMS & CONDITIONS", 15, currentY);
-    
-    doc.setDrawColor(navy[0], navy[1], navy[2]);
-    doc.setLineWidth(0.3);
-    doc.line(15, currentY + 1.5, 50, currentY + 1.5);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    const splitTerms = doc.splitTextToSize(terms, 180);
-    doc.text(splitTerms, 15, currentY + 8);
 
     const blob = doc.output('blob');
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
-  }, [customer, rooms, miscCharges, rawGrandTotal, fabricDiscountAmount, additionalDiscount, finalTotal, terms, fabricDiscount, gstPercent, gstAmount]);
+  }, [customer, items, miscCharges, fabricDiscount, additionalDiscount, gstPercent, terms, finalTotal, calculateItemTotal, currentId]);
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -445,14 +533,14 @@ export const Quotation: React.FC = () => {
               Draft New Quote
             </button>
             <button 
-              onClick={() => setView('list')}
+              onClick={() => { setView('list'); fetchQuotations(); }}
               className={`text-[10px] font-black uppercase tracking-[0.2em] pb-1 border-b-2 transition-all ${view === 'list' ? 'text-[#002d62] border-[#002d62]' : 'text-slate-400 border-transparent'}`}
             >
               Saved Quotations ({savedQuotes.length})
             </button>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           {view === 'create' && (
             <>
               <button 
@@ -462,10 +550,16 @@ export const Quotation: React.FC = () => {
                 <i className="fas fa-save"></i> Save Draft
               </button>
               <button 
-                onClick={handleDownloadQuotation}
-                className="px-8 py-4 bg-[#002d62] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-[#003d7a] transition-all flex items-center gap-3 active:scale-95"
+                onClick={() => handleDownloadPDF('quotation')}
+                className="px-6 py-4 bg-[#002d62] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-[#003d7a] transition-all flex items-center gap-3 active:scale-95"
               >
-                <i className="fas fa-print"></i> Print Details
+                <i className="fas fa-print"></i> Print Quotation
+              </button>
+              <button 
+                onClick={() => handleDownloadPDF('delivery_challan')}
+                className="px-6 py-4 bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-amber-600 transition-all flex items-center gap-3 active:scale-95"
+              >
+                <i className="fas fa-truck"></i> Delivery Challan
               </button>
             </>
           )}
@@ -486,31 +580,45 @@ export const Quotation: React.FC = () => {
             </div>
           ) : (
             savedQuotes.map(quote => (
-              <div key={quote.id} className="bg-white rounded-[2rem] p-8 shadow-xl border border-slate-50 relative group">
+              <div key={quote.id} className="bg-white rounded-[2rem] p-8 shadow-xl border border-slate-50 relative group flex flex-col justify-between min-h-[300px]">
                 <div className="absolute top-4 right-4 flex gap-2">
                    <button onClick={() => deleteQuotation(quote.id)} className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100">
                      <i className="fas fa-trash-alt text-xs"></i>
                    </button>
                 </div>
-                <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-2">{quote.id}</div>
-                <h4 className="text-xl font-black text-[#002d62] mb-1">{quote.customer_name}</h4>
-                <p className="text-slate-400 text-xs font-bold mb-6">{quote.phone || 'No phone'}</p>
-                
-                <div className="flex justify-between items-end">
-                   <div>
-                     <div className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Total Value</div>
-                     <div className="text-2xl font-black text-[#002d62]">Rs. {quote.total_amount.toLocaleString()}</div>
-                   </div>
-                   <button 
-                     onClick={() => loadQuotation(quote)}
-                     className="px-6 py-3 bg-[#002d62] text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 shadow-lg active:scale-95 transition-all"
-                   >
-                     Reload Quote
-                   </button>
+                <div>
+                  <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-2">{quote.id}</div>
+                  <h4 className="text-xl font-black text-[#002d62] mb-1">{quote.customer_name}</h4>
+                  <p className="text-slate-400 text-xs font-bold mb-6">{quote.phone || 'No phone'}</p>
                 </div>
-                <div className="mt-6 pt-6 border-t border-slate-50 flex justify-between">
-                   <span className="text-[9px] font-bold text-slate-300 uppercase">{new Date(quote.date).toLocaleDateString()}</span>
-                   <span className="text-[9px] font-bold text-slate-300 uppercase">{quote.rooms.length} Rooms</span>
+                
+                <div>
+                  <div className="flex justify-between items-end gap-3">
+                     <div>
+                       <div className="text-[9px] font-black text-slate-300 uppercase tracking-widest mb-1">Total Value</div>
+                       <div className="text-2xl font-black text-[#002d62]">Rs. {quote.total_amount.toLocaleString()}</div>
+                     </div>
+                     <div className="flex flex-col gap-2">
+                       <button 
+                         onClick={() => loadQuotation(quote)}
+                         className="px-5 py-2.5 bg-[#002d62] text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 shadow-md active:scale-95 transition-all text-center"
+                       >
+                         Reload
+                       </button>
+                       <button 
+                         onClick={() => handleDownloadPDF('delivery_challan', quote)}
+                         className="px-5 py-2.5 bg-amber-500 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-amber-600 shadow-md active:scale-95 transition-all text-center flex items-center gap-1.5 justify-center"
+                       >
+                         <i className="fas fa-truck text-[9px]"></i> Delivery Note
+                       </button>
+                     </div>
+                  </div>
+                  <div className="mt-6 pt-6 border-t border-slate-50 flex justify-between">
+                     <span className="text-[9px] font-bold text-slate-300 uppercase">{new Date(quote.date).toLocaleDateString()}</span>
+                     <span className="text-[9px] font-bold text-slate-300 uppercase">
+                       {quote.items ? `${quote.items.length} Products` : `${(quote as any).rooms?.length || 0} Rooms`}
+                     </span>
+                  </div>
                 </div>
               </div>
             ))
@@ -542,13 +650,13 @@ export const Quotation: React.FC = () => {
           </div>
 
           <button 
-            onClick={handleAddRoom}
+            onClick={handleAddItem}
             className="w-full py-6 bg-blue-50 text-[#002d62] rounded-3xl font-black text-xs uppercase tracking-widest border-2 border-dashed border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-all flex flex-col items-center gap-2 group"
           >
             <div className="w-10 h-10 bg-[#002d62] text-white rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
               <i className="fas fa-plus"></i>
             </div>
-            Add New Room
+            Add Product Item
           </button>
 
           <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100">
@@ -601,55 +709,48 @@ export const Quotation: React.FC = () => {
 
         {/* Right Column: Build Area */}
         <div className="lg:col-span-3 space-y-8">
-          {rooms.length === 0 && (
-            <div className="h-64 border-4 border-dashed border-slate-100 rounded-[3rem] flex flex-col items-center justify-center text-slate-300">
-              <i className="fas fa-layer-group text-4xl mb-4"></i>
-              <p className="font-black uppercase tracking-widest text-xs">Start by adding a room</p>
-            </div>
-          )}
-
-          {rooms.map(room => (
-            <div key={room.id} className="bg-white rounded-[2rem] shadow-xl overflow-hidden animate-in slide-in-from-bottom-4 duration-500 border border-slate-100">
-              <div className="bg-[#002d62] px-8 py-6 flex justify-between items-center">
-                <div>
-                  <h3 className="text-white font-black uppercase tracking-[0.2em] text-sm">{room.name}</h3>
-                  <p className="text-blue-300/60 text-[9px] font-bold uppercase tracking-widest">{room.windows.length} Window(s)</p>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => handleAddWindow(room.id)}
-                    className="px-4 py-2 bg-white/10 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/20"
-                  >
-                    Add Window
-                  </button>
-                  <button 
-                    onClick={() => setRooms(rooms.filter(r => r.id !== room.id))}
-                    className="px-3 py-2 bg-red-500/20 text-red-300 rounded-xl hover:bg-red-500 hover:text-white transition-all"
-                  >
-                    <i className="fas fa-trash"></i>
-                  </button>
-                </div>
+          
+          <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden border border-slate-100">
+            <div className="bg-[#002d62] px-8 py-6 flex justify-between items-center">
+              <div>
+                <h3 className="text-white font-black uppercase tracking-[0.2em] text-sm">Product List</h3>
+                <p className="text-blue-300/60 text-[9px] font-bold uppercase tracking-widest">{items.length} Product(s)</p>
               </div>
+              <button 
+                onClick={handleAddItem}
+                className="px-6 py-3 bg-white/10 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/20 active:scale-95 transition-all"
+              >
+                + Add Product Item
+              </button>
+            </div>
 
+            {items.length === 0 ? (
+              <div className="h-64 flex flex-col items-center justify-center text-slate-300">
+                <i className="fas fa-layer-group text-4xl mb-4"></i>
+                <p className="font-black uppercase tracking-widest text-xs">No products added. Start by adding a product!</p>
+              </div>
+            ) : (
               <div className="p-0 overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
-                      <th className="px-6 py-4 text-[8px] font-black text-slate-400 uppercase tracking-widest text-left">Treatment & Details</th>
+                      <th className="px-6 py-4 text-[8px] font-black text-slate-400 uppercase tracking-widest text-left">Treatment / Product Details</th>
+                      <th className="px-6 py-4 text-[8px] font-black text-slate-400 uppercase tracking-widest text-left">Quantity</th>
                       <th className="px-6 py-4 text-[8px] font-black text-slate-400 uppercase tracking-widest text-left">Parameters</th>
                       <th className="px-6 py-4 text-[8px] font-black text-slate-400 uppercase tracking-widest text-right">Total Cost</th>
                       <th className="px-6 py-4 w-10"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {room.windows.map(window => (
-                      <tr key={window.id} className="group hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-5">
+                  <tbody className="divide-y divide-slate-100">
+                    {items.map(item => (
+                      <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors">
+                        {/* Column 1: Treatment, Name & Comments */}
+                        <td className="px-6 py-5 align-top">
                           <div className="flex gap-2 mb-2">
                              <select 
-                               value={window.type}
-                               onChange={(e) => updateWindow(room.id, window.id, { type: e.target.value as any })}
-                               className="px-2 py-1 bg-slate-100 rounded-lg text-[9px] font-black uppercase outline-none"
+                               value={item.type}
+                               onChange={(e) => updateItem(item.id, { type: e.target.value as any })}
+                               className="px-2 py-1 bg-slate-100 rounded-lg text-[9px] font-black uppercase outline-none border border-slate-200"
                              >
                                <option value="Curtain">Curtain</option>
                                <option value="Roman Blind">Roman Blind</option>
@@ -661,38 +762,65 @@ export const Quotation: React.FC = () => {
                              </select>
                              <input 
                               type="text" 
-                              value={window.name}
-                              onChange={(e) => updateWindow(room.id, window.id, { name: e.target.value })}
+                              value={item.name}
+                              onChange={(e) => updateItem(item.id, { name: e.target.value })}
                               className="font-bold text-sm text-[#002d62] bg-transparent outline-none border-b border-transparent focus:border-blue-500 flex-1"
                             />
                           </div>
                           <input 
                             type="text" 
-                            placeholder="Tweak notes for window..."
-                            value={window.comment}
-                            onChange={(e) => updateWindow(room.id, window.id, { comment: e.target.value })}
-                            className="block text-[9px] text-slate-400 bg-transparent outline-none w-full italic"
+                            placeholder="Add room name or notes (e.g., Master Bedroom, First Floor)..."
+                            value={item.comment || ''}
+                            onChange={(e) => updateItem(item.id, { comment: e.target.value })}
+                            className="block text-[11px] text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100 outline-none w-full italic"
                           />
                         </td>
-                        <td className="px-6 py-5">
+
+                        {/* Column 2: Quantity selector */}
+                        <td className="px-6 py-5 align-top w-28">
+                          <div className="flex items-center bg-slate-100 rounded-lg p-1 w-fit border border-slate-200">
+                            <button 
+                              onClick={() => updateItem(item.id, { quantity: Math.max(1, (item.quantity || 1) - 1) })}
+                              className="w-6 h-6 rounded bg-white font-black text-slate-600 hover:bg-slate-200"
+                            >
+                              -
+                            </button>
+                            <input 
+                              type="number"
+                              min="1"
+                              value={item.quantity || 1}
+                              onChange={(e) => updateItem(item.id, { quantity: Math.max(1, Number(e.target.value)) })}
+                              className="w-10 text-center font-bold text-xs bg-transparent outline-none"
+                            />
+                            <button 
+                              onClick={() => updateItem(item.id, { quantity: (item.quantity || 1) + 1 })}
+                              className="w-6 h-6 rounded bg-white font-black text-slate-600 hover:bg-slate-200"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </td>
+
+                        {/* Column 3: Parameters */}
+                        <td className="px-6 py-5 align-top">
                            <div className="flex flex-wrap gap-4 items-start">
                              {/* Fabric Section */}
-                             {(window.type === 'Curtain' || window.type === 'Roman Blind' || window.type === 'Fabric Only') && (
+                             {(item.type === 'Curtain' || item.type === 'Roman Blind' || item.type === 'Fabric Only') && (
                                <div className="space-y-1">
                                  <label className="block text-[7px] font-black text-slate-400 uppercase mb-1">Fabric Qty & Rate</label>
                                  <div className="flex gap-1">
                                    <input 
                                      type="number" 
                                      placeholder="m"
-                                     value={window.fabric_qty || ''}
-                                     onChange={(e) => updateWindow(room.id, window.id, { fabric_qty: Number(e.target.value) })}
+                                     value={item.fabric_qty || ''}
+                                     onChange={(e) => updateItem(item.id, { fabric_qty: Number(e.target.value) })}
                                      className="w-16 px-2 py-1 bg-slate-100 rounded-lg text-[10px] font-bold"
                                    />
                                    <input 
                                      type="number" 
                                      placeholder="Rate"
-                                     value={window.fabric_rate || ''}
-                                     onChange={(e) => updateWindow(room.id, window.id, { fabric_rate: Number(e.target.value) })}
+                                     value={item.fabric_rate || ''}
+                                     onChange={(e) => updateItem(item.id, { fabric_rate: Number(e.target.value) })}
                                      className="w-20 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold"
                                    />
                                  </div>
@@ -700,24 +828,24 @@ export const Quotation: React.FC = () => {
                              )}
 
                              {/* Blinds / Net Section */}
-                             {(window.type === 'Roller Blind' || window.type === 'Mosquito Net') && (
+                             {(item.type === 'Roller Blind' || item.type === 'Mosquito Net') && (
                                <div className="space-y-1">
                                  <label className="block text-[7px] font-black text-slate-400 uppercase mb-1">
-                                   {window.type === 'Mosquito Net' ? 'Net SQFT & Rate' : 'Blind SQFT & Rate'}
+                                   {item.type === 'Mosquito Net' ? 'Net SQFT & Rate' : 'Blind SQFT & Rate'}
                                  </label>
                                  <div className="flex gap-1">
                                    <input 
                                      type="number" 
                                      placeholder="sqft"
-                                     value={window.sqft || ''}
-                                     onChange={(e) => updateWindow(room.id, window.id, { sqft: Number(e.target.value) })}
+                                     value={item.sqft || ''}
+                                     onChange={(e) => updateItem(item.id, { sqft: Number(e.target.value) })}
                                      className="w-16 px-2 py-1 bg-slate-100 rounded-lg text-[10px] font-bold"
                                    />
                                    <input 
                                      type="number" 
                                      placeholder="Rate"
-                                     value={window.blind_rate || ''}
-                                     onChange={(e) => updateWindow(room.id, window.id, { blind_rate: Number(e.target.value) })}
+                                     value={item.blind_rate || ''}
+                                     onChange={(e) => updateItem(item.id, { blind_rate: Number(e.target.value) })}
                                      className="w-20 px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold"
                                    />
                                  </div>
@@ -725,22 +853,22 @@ export const Quotation: React.FC = () => {
                              )}
 
                              {/* Stitching Section */}
-                             {(window.type === 'Curtain' || window.type === 'Roman Blind') && (
+                             {(item.type === 'Curtain' || item.type === 'Roman Blind') && (
                                <div className="space-y-1">
                                  <label className="block text-[7px] font-black text-slate-400 uppercase mb-1">Stitching (Panels)</label>
                                  <div className="flex gap-1 items-center">
                                    <input 
                                      type="number" 
                                      placeholder="Qty"
-                                     value={window.panels || ''}
-                                     onChange={(e) => updateWindow(room.id, window.id, { panels: Number(e.target.value) })}
+                                     value={item.panels || ''}
+                                     onChange={(e) => updateItem(item.id, { panels: Number(e.target.value) })}
                                      className="w-12 px-2 py-1 bg-slate-100 rounded-lg text-[10px] font-bold"
                                    />
                                    <input 
                                      type="number" 
                                      placeholder="Rate"
-                                     value={window.stitching_rate || ''}
-                                     onChange={(e) => updateWindow(room.id, window.id, { stitching_rate: Number(e.target.value) })}
+                                     value={item.stitching_rate || ''}
+                                     onChange={(e) => updateItem(item.id, { stitching_rate: Number(e.target.value) })}
                                      className="w-16 px-2 py-1 bg-slate-50 rounded-lg text-[10px] font-bold"
                                    />
                                  </div>
@@ -748,30 +876,30 @@ export const Quotation: React.FC = () => {
                              )}
 
                              {/* Hardware Section */}
-                             {(window.type === 'Curtain' || window.type === 'Roman Blind' || window.type === 'Rods Only') && (
+                             {(item.type === 'Curtain' || item.type === 'Roman Blind' || item.type === 'Rods Only') && (
                                <div className="space-y-1">
                                  <label className="block text-[7px] font-black text-slate-400 uppercase mb-1">Hardware (Rod FT)</label>
                                  <div className="flex gap-1 items-center">
                                     <input 
                                      type="number" 
                                      placeholder="ft"
-                                     value={window.track_ft || ''}
-                                     onChange={(e) => updateWindow(room.id, window.id, { track_ft: Number(e.target.value) })}
+                                     value={item.track_ft || ''}
+                                     onChange={(e) => updateItem(item.id, { track_ft: Number(e.target.value) })}
                                      className="w-12 px-2 py-1 bg-slate-100 rounded-lg text-[10px] font-bold"
                                    />
-                                   <input 
+                                    <input 
                                      type="number" 
                                      placeholder="Rate"
-                                     value={window.track_rate || ''}
-                                     onChange={(e) => updateWindow(room.id, window.id, { track_rate: Number(e.target.value) })}
+                                     value={item.track_rate || ''}
+                                     onChange={(e) => updateItem(item.id, { track_rate: Number(e.target.value) })}
                                      className="w-16 px-2 py-1 bg-amber-50 text-amber-600 rounded-lg text-[10px] font-bold"
                                    />
-                                   {(window.type === 'Curtain' || window.type === 'Roman Blind') && (
+                                   {(item.type === 'Curtain' || item.type === 'Roman Blind') && (
                                     <label className="flex items-center gap-1 cursor-pointer select-none">
                                       <input 
                                         type="checkbox" 
-                                        checked={window.is_double_curtain}
-                                        onChange={(e) => updateWindow(room.id, window.id, { is_double_curtain: e.target.checked })}
+                                        checked={item.is_double_curtain}
+                                        onChange={(e) => updateItem(item.id, { is_double_curtain: e.target.checked })}
                                         className="w-3 h-3 rounded"
                                       />
                                       <span className="text-[7px] font-black text-[#002d62] uppercase leading-none">Double</span>
@@ -782,37 +910,42 @@ export const Quotation: React.FC = () => {
                              )}
                            </div>
                         </td>
-                        <td className="px-6 py-5 text-right">
-                          <div className="text-sm font-black text-[#002d62]">₹{calculateWindowTotal(window).toLocaleString()}</div>
-                          <div className="flex flex-col items-end gap-1 mt-1">
-                            {window.type !== 'Fabric Only' && (
+
+                        {/* Column 4: Total Cost */}
+                        <td className="px-6 py-5 text-right align-top">
+                          <div className="text-sm font-black text-[#002d62]">₹{calculateItemTotal(item).toLocaleString()}</div>
+                          <div className="text-[9px] font-bold text-slate-400 mt-0.5">₹{(calculateItemTotal(item) / (item.quantity || 1)).toLocaleString()} / unit</div>
+                          <div className="flex flex-col items-end gap-1 mt-2">
+                            {item.type !== 'Fabric Only' && (
                               <button 
                                 onClick={() => {
-                                  const cost = prompt("Enter Installation Cost:", window.installation_cost.toString());
-                                  if (cost !== null) updateWindow(room.id, window.id, { installation_cost: Number(cost) });
+                                  const cost = prompt("Enter Installation Cost per unit:", item.installation_cost.toString());
+                                  if (cost !== null) updateItem(item.id, { installation_cost: Number(cost) });
                                 }}
                                 className="text-[7px] font-black text-blue-500 uppercase tracking-tighter hover:underline"
                               >
-                                + Installation ₹{window.installation_cost}
+                                + Installation ₹{item.installation_cost}
                               </button>
                             )}
-                            {(window.type === 'Roman Blind' || window.type === 'Roller Blind' || window.type === 'Mosquito Net') && (
+                            {(item.type === 'Roman Blind' || item.type === 'Roller Blind' || item.type === 'Mosquito Net') && (
                                <button 
-                               onClick={() => {
-                                 const cost = prompt("Enter Mechanism/Frame Cost:", window.mechanism_cost.toString());
-                                 if (cost !== null) updateWindow(room.id, window.id, { mechanism_cost: Number(cost) });
-                               }}
-                               className="text-[7px] font-black text-emerald-500 uppercase tracking-tighter hover:underline"
-                             >
-                               + Mechanism/Frame ₹{window.mechanism_cost}
-                             </button>
+                                 onClick={() => {
+                                   const cost = prompt("Enter Mechanism/Frame Cost per unit:", item.mechanism_cost.toString());
+                                   if (cost !== null) updateItem(item.id, { mechanism_cost: Number(cost) });
+                                 }}
+                                 className="text-[7px] font-black text-emerald-500 uppercase tracking-tighter hover:underline"
+                               >
+                                 + Mech ₹{item.mechanism_cost}
+                               </button>
                             )}
                           </div>
                         </td>
-                        <td className="px-6 py-4">
+
+                        {/* Column 5: Actions */}
+                        <td className="px-6 py-5 align-top">
                            <button 
-                             onClick={() => setRooms(rooms.map(r => r.id === room.id ? { ...r, windows: r.windows.filter(w => w.id !== window.id) } : r))}
-                             className="text-red-200 hover:text-red-500 transition-colors"
+                             onClick={() => setItems(items.filter(it => it.id !== item.id))}
+                             className="text-red-300 hover:text-red-500 transition-colors"
                            >
                              <i className="fas fa-times"></i>
                            </button>
@@ -822,10 +955,10 @@ export const Quotation: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-            </div>
-          ))}
+            )}
+          </div>
 
-          {/* Misc Section */}
+          {/* Miscellaneous charges section */}
           <div className="bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200 p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -880,17 +1013,17 @@ export const Quotation: React.FC = () => {
             </div>
             <div className="z-10 flex gap-4">
               <button 
-                onClick={handleDownloadQuotation}
-                className="px-10 py-5 bg-white text-[#002d62] rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-50 transition-all shadow-xl active:scale-95"
+                onClick={() => handleDownloadPDF('quotation')}
+                className="px-8 py-5 bg-white text-[#002d62] rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-50 transition-all shadow-xl active:scale-95"
               >
                 Finalize & Print
               </button>
             </div>
           </div>
-        </div>
 
-      </div>
-    )}
-  </div>
-);
+        </div>
+        </div>
+      )}
+    </div>
+  );
 };

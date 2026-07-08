@@ -75,10 +75,11 @@ export interface OrderBilling {
   paid_total: number;
 }
 
-export interface QuotationWindow {
+export interface QuotationItem {
   id: string;
   name: string;
   type: 'Curtain' | 'Roman Blind' | 'Roller Blind' | 'Mosquito Net' | 'Rods Only' | 'Fabric Only' | 'Misc';
+  quantity: number;
   fabric_qty: number;
   fabric_rate: number;
   panels: number;
@@ -96,12 +97,6 @@ export interface QuotationWindow {
   is_double_curtain: boolean;
 }
 
-export interface QuotationRoom {
-  id: string;
-  name: string;
-  windows: QuotationWindow[];
-}
-
 export interface MiscCharge {
   id: string;
   description: string;
@@ -114,7 +109,7 @@ export interface Quotation {
   customer_name: string;
   phone: string;
   date: string;
-  rooms: QuotationRoom[];
+  items: QuotationItem[];
   misc_charges: MiscCharge[];
   fabric_discount_percent: number;
   additional_discount: number;
