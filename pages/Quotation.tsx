@@ -389,19 +389,19 @@ export const Quotation: React.FC = () => {
       head: tableHead,
       body: tableBody,
       theme: 'grid',
-      headStyles: { fillColor: navy, fontSize: 9, fontStyle: 'bold' },
-      bodyStyles: { fontSize: 9, textColor: [40, 40, 40] },
+      headStyles: { fillColor: navy, fontSize: 8.5, fontStyle: 'bold', cellPadding: 2.5 },
+      bodyStyles: { fontSize: 8.5, textColor: [40, 40, 40], cellPadding: 2.5 },
       columnStyles: pdfType === 'quotation' ? {
-        0: { cellWidth: 15, halign: 'center' },
-        1: { cellWidth: 85 },
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 75 },
         2: { cellWidth: 25, halign: 'center' },
-        3: { cellWidth: 35, halign: 'right' },
-        4: { cellWidth: 40, halign: 'right', fontStyle: 'bold' }
+        3: { cellWidth: 32, halign: 'right' },
+        4: { cellWidth: 38, halign: 'right', fontStyle: 'bold' }
       } : {
-        0: { cellWidth: 15, halign: 'center' },
-        1: { cellWidth: 95 },
-        2: { cellWidth: 30, halign: 'center' },
-        3: { cellWidth: 30, halign: 'center' },
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 80 },
+        2: { cellWidth: 25, halign: 'center' },
+        3: { cellWidth: 35, halign: 'center' },
         4: { cellWidth: 30 }
       },
       margin: { left: 15, right: 15 },
@@ -684,7 +684,7 @@ export const Quotation: React.FC = () => {
                     type="text"
                     value={customer.name}
                     onChange={(e) => setCustomer({...customer, name: e.target.value})}
-                    className="w-full px-4 py-3 mt-1 bg-slate-50 border-none rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500/20"
+                    className="w-full px-4 py-3 mt-1 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500/10 focus:border-blue-500"
                     placeholder="Enter full name"
                   />
                 </div>
@@ -694,7 +694,7 @@ export const Quotation: React.FC = () => {
                     type="text"
                     value={customer.phone}
                     onChange={(e) => setCustomer({...customer, phone: e.target.value})}
-                    className="w-full px-4 py-3 mt-1 bg-slate-50 border-none rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500/20"
+                    className="w-full px-4 py-3 mt-1 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500/10 focus:border-blue-500"
                     placeholder="Enter contact No"
                   />
                 </div>
@@ -704,7 +704,7 @@ export const Quotation: React.FC = () => {
                     type="date"
                     value={customer.date}
                     onChange={(e) => setCustomer({...customer, date: e.target.value})}
-                    className="w-full px-4 py-3 mt-1 bg-slate-50 border-none rounded-xl font-bold text-sm outline-none"
+                    className="w-full px-4 py-3 mt-1 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500/10 focus:border-blue-500"
                   />
                 </div>
               </div>
@@ -719,7 +719,7 @@ export const Quotation: React.FC = () => {
                     type="number"
                     value={additionalDiscount || ''}
                     onChange={(e) => setAdditionalDiscount(Number(e.target.value))}
-                    className="w-full px-4 py-3 mt-1 bg-yellow-50 text-yellow-800 rounded-xl font-black text-sm outline-none"
+                    className="w-full px-4 py-3 mt-1 bg-yellow-50/50 border border-yellow-200 text-yellow-800 rounded-xl font-black text-sm outline-none focus:ring-2 ring-yellow-500/10 focus:border-yellow-500"
                     placeholder="Flat discount amount"
                   />
                 </div>
@@ -728,7 +728,7 @@ export const Quotation: React.FC = () => {
                   <select 
                     value={gstPercent}
                     onChange={(e) => setGstPercent(Number(e.target.value))}
-                    className="w-full px-4 py-3 mt-1 bg-blue-50 text-blue-800 rounded-xl font-black text-sm outline-none appearance-none cursor-pointer"
+                    className="w-full px-4 py-3 mt-1 bg-blue-50/50 border border-blue-200 text-blue-800 rounded-xl font-black text-sm outline-none appearance-none cursor-pointer focus:ring-2 ring-blue-500/10 focus:border-blue-500"
                   >
                     <option value={0}>No GST (0%)</option>
                     <option value={5}>5% GST</option>
@@ -741,7 +741,7 @@ export const Quotation: React.FC = () => {
                   <textarea 
                     value={terms}
                     onChange={(e) => setTerms(e.target.value)}
-                    className="w-full px-4 py-3 mt-1 bg-slate-50 border-none rounded-xl font-semibold text-xs outline-none min-h-[120px]"
+                    className="w-full px-4 py-3 mt-1 bg-white border border-slate-200 rounded-xl font-semibold text-xs outline-none min-h-[120px] focus:ring-2 ring-blue-500/10 focus:border-blue-500"
                   />
                 </div>
               </div>
@@ -779,19 +779,19 @@ export const Quotation: React.FC = () => {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[900px]">
+                  <table className="w-full min-w-[1150px]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-100 text-left">
-                        <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center w-12">SNo</th>
-                        <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest w-48">Category</th>
-                        <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Product Details / Description</th>
-                        <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest w-28">Total Qty</th>
-                        <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest w-24">Unit</th>
-                        <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest w-28">Rate (₹)</th>
-                        <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest w-24 text-center">Disc (%)</th>
-                        <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest w-28 text-right">Total Cost</th>
-                        <th className="px-5 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest w-32 text-right">Cost Post Disc</th>
-                        <th className="px-5 py-4 w-12 text-center"></th>
+                        <th className="px-2 py-3.5 text-[9px] font-black text-slate-500 uppercase tracking-widest text-center w-12">SNo</th>
+                        <th className="px-2 py-3.5 text-[9px] font-black text-slate-500 uppercase tracking-widest w-[160px] min-w-[160px]">Category</th>
+                        <th className="px-2 py-3.5 text-[9px] font-black text-slate-500 uppercase tracking-widest">Product Details / Description</th>
+                        <th className="px-2 py-3.5 text-[9px] font-black text-slate-500 uppercase tracking-widest w-[85px] min-w-[85px] text-center">Total Qty</th>
+                        <th className="px-2 py-3.5 text-[9px] font-black text-slate-500 uppercase tracking-widest w-[85px] min-w-[85px] text-center">Unit</th>
+                        <th className="px-2 py-3.5 text-[9px] font-black text-slate-500 uppercase tracking-widest w-[110px] min-w-[110px] text-center">Rate (₹)</th>
+                        <th className="px-2 py-3.5 text-[9px] font-black text-slate-500 uppercase tracking-widest w-[75px] min-w-[75px] text-center">Disc (%)</th>
+                        <th className="px-2 py-3.5 text-[9px] font-black text-slate-500 uppercase tracking-widest w-[110px] min-w-[110px] text-right">Total Cost</th>
+                        <th className="px-2 py-3.5 text-[9px] font-black text-slate-500 uppercase tracking-widest w-[120px] min-w-[120px] text-right">Cost Post Disc</th>
+                        <th className="px-2 py-3.5 w-12 text-center"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -804,16 +804,16 @@ export const Quotation: React.FC = () => {
                           <tr key={item.id} className="hover:bg-slate-50/50 transition-all">
                             
                             {/* Serial Number */}
-                            <td className="px-5 py-4 text-center text-xs font-bold text-slate-400">
+                            <td className="px-2 py-3 text-center text-xs font-bold text-slate-400">
                               {idx + 1}
                             </td>
 
                             {/* Dropdown product categories */}
-                            <td className="px-5 py-4">
+                            <td className="px-2 py-3">
                               <select 
                                 value={item.type}
                                 onChange={(e) => updateItem(item.id, { type: e.target.value as CategoryType })}
-                                className="w-full px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 ring-blue-500/20"
+                                className="w-full px-2 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-2 ring-blue-500/10 focus:border-blue-500 cursor-pointer"
                               >
                                 {PRODUCT_CATEGORIES.map(cat => (
                                   <option key={cat} value={cat}>{cat}</option>
@@ -822,44 +822,44 @@ export const Quotation: React.FC = () => {
                             </td>
 
                             {/* Description / Products */}
-                            <td className="px-5 py-4">
+                            <td className="px-2 py-3">
                               <input 
                                 type="text"
                                 value={item.name}
                                 onChange={(e) => updateItem(item.id, { name: e.target.value })}
                                 placeholder="e.g. Living Room - Main Fabric - 4th Floor"
-                                className="w-full px-3 py-2 bg-slate-50 border border-transparent rounded-xl font-semibold text-xs text-slate-800 placeholder-slate-400 outline-none focus:bg-white focus:border-slate-200"
+                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-semibold text-xs text-slate-800 placeholder-slate-400 outline-none focus:ring-2 ring-blue-500/10 focus:border-blue-500"
                               />
                               <input 
                                 type="text"
                                 value={item.comment || ''}
                                 onChange={(e) => updateItem(item.id, { comment: e.target.value })}
                                 placeholder="Optional placement note..."
-                                className="w-full px-3 py-1 mt-1 bg-transparent text-[10px] text-slate-400 italic outline-none"
+                                className="w-full px-3 py-1 mt-1 bg-white border border-slate-150 rounded-lg text-[10px] text-slate-450 italic outline-none focus:border-slate-300"
                               />
                             </td>
 
                             {/* Quantity */}
-                            <td className="px-5 py-4">
+                            <td className="px-2 py-3">
                               <input 
                                 type="number"
                                 step="any"
                                 value={item.qty ?? ''}
                                 onChange={(e) => updateItem(item.id, { qty: Number(e.target.value) })}
                                 placeholder="1"
-                                className="w-full px-3 py-2 bg-slate-50 border border-transparent rounded-xl font-bold text-xs text-slate-800 outline-none text-center focus:bg-white focus:border-slate-200"
+                                className="w-full px-2 py-2 bg-white border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none text-center focus:ring-2 ring-blue-500/10 focus:border-blue-500"
                               />
                             </td>
 
                             {/* Unit (with quick change options) */}
-                            <td className="px-5 py-4">
+                            <td className="px-2 py-3">
                               <div className="relative group/unit">
                                 <input 
                                   type="text"
                                   value={item.unit}
                                   onChange={(e) => updateItem(item.id, { unit: e.target.value })}
                                   placeholder="e.g. Mtrs"
-                                  className="w-full px-2 py-2 bg-slate-50 border border-transparent rounded-xl font-bold text-xs text-slate-800 text-center outline-none focus:bg-white focus:border-slate-200"
+                                  className="w-full px-2 py-2 bg-white border border-slate-200 rounded-xl font-bold text-xs text-slate-800 text-center outline-none focus:ring-2 ring-blue-500/10 focus:border-blue-500"
                                 />
                                 {/* Quick select pills */}
                                 <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white border border-slate-100 rounded-lg shadow-md p-1.5 hidden group-focus-within/unit:flex gap-1 z-30">
@@ -878,42 +878,42 @@ export const Quotation: React.FC = () => {
                             </td>
 
                             {/* Rate */}
-                            <td className="px-5 py-4">
+                            <td className="px-2 py-3">
                               <div className="relative">
-                                <span className="absolute left-2 top-2.5 text-[10px] font-bold text-slate-400">₹</span>
+                                <span className="absolute left-2.5 top-2.5 text-[10px] font-bold text-slate-400">₹</span>
                                 <input 
                                   type="number"
                                   value={item.rate ?? ''}
                                   onChange={(e) => updateItem(item.id, { rate: Number(e.target.value) })}
                                   placeholder="0"
-                                  className="w-full pl-5 pr-2 py-2 bg-slate-50 border border-transparent rounded-xl font-bold text-xs text-slate-800 outline-none focus:bg-white focus:border-slate-200"
+                                  className="w-full pl-6 pr-2 py-2 bg-white border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none focus:ring-2 ring-blue-500/10 focus:border-blue-500"
                                 />
                               </div>
                             </td>
 
                             {/* Row Discount */}
-                            <td className="px-5 py-4">
+                            <td className="px-2 py-3">
                               <input 
                                 type="number"
                                 value={item.discount_percent ?? ''}
                                 onChange={(e) => updateItem(item.id, { discount_percent: Math.min(100, Math.max(0, Number(e.target.value))) })}
                                 placeholder="0"
-                                className="w-full px-1 py-2 bg-emerald-50 border border-transparent rounded-xl font-bold text-xs text-emerald-800 text-center outline-none focus:bg-white focus:border-slate-200"
+                                className="w-full px-2 py-2 bg-emerald-50/50 border border-emerald-200 rounded-xl font-bold text-xs text-emerald-800 text-center outline-none focus:ring-2 ring-emerald-500/10 focus:border-emerald-500"
                               />
                             </td>
 
                             {/* Total Cost before discount */}
-                            <td className="px-5 py-4 text-right text-xs font-bold text-slate-600">
+                            <td className="px-2 py-3 text-right text-xs font-bold text-slate-600">
                               ₹{Math.round(rowCost).toLocaleString()}
                             </td>
 
                             {/* Cost post discount */}
-                            <td className="px-5 py-4 text-right text-xs font-black text-[#002d62]">
+                            <td className="px-2 py-3 text-right text-xs font-black text-[#002d62]">
                               ₹{Math.round(rowPostDisc).toLocaleString()}
                             </td>
 
                             {/* Remove button */}
-                            <td className="px-5 py-4 text-center">
+                            <td className="px-2 py-3 text-center">
                               <button 
                                 onClick={() => removeItem(item.id)}
                                 className="text-slate-300 hover:text-red-500 transition-colors text-xs"
@@ -927,17 +927,17 @@ export const Quotation: React.FC = () => {
                       })}
 
                       {/* Yellow highlighted summary row matching sample */}
-                      <tr className="bg-yellow-50 border-t-2 border-yellow-300 font-black">
-                        <td colSpan={2} className="px-5 py-4 text-xs uppercase tracking-widest text-slate-500">
+                      <tr className="bg-yellow-50/50 border-t-2 border-yellow-200 font-black">
+                        <td colSpan={2} className="px-2 py-3.5 text-xs uppercase tracking-widest text-slate-500">
                           Summary Row
                         </td>
-                        <td colSpan={5} className="px-5 py-4 text-sm text-[#002d62] text-right font-black uppercase tracking-tighter">
+                        <td colSpan={5} className="px-2 py-3.5 text-sm text-[#002d62] text-right font-black uppercase tracking-tighter">
                           Grand Total (Estimates Sum)
                         </td>
-                        <td className="px-5 py-4 text-right text-xs text-slate-700">
+                        <td className="px-2 py-3.5 text-right text-xs text-slate-700">
                           ₹{Math.round(totalCostBeforeDiscount).toLocaleString()}
                         </td>
-                        <td className="px-5 py-4 text-right text-sm text-yellow-950 font-black">
+                        <td className="px-2 py-3.5 text-right text-sm text-yellow-950 font-black">
                           ₹{Math.round(totalCostPostDiscount).toLocaleString()}
                         </td>
                         <td></td>
