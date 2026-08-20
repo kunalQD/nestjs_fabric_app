@@ -22,6 +22,11 @@ import autoTable from "jspdf-autotable";
 
 interface CalculatorProps {
   orderId: string | null;
+  initialData?: {
+    name?: string;
+    phone?: string;
+    totalBill?: number;
+  } | null;
   onSave: () => void;
 }
 
@@ -58,6 +63,7 @@ const compressImage = (base64Str: string, maxWidth = 1200): Promise<string> => {
 
 export const Calculator: React.FC<CalculatorProps> = ({
   orderId,
+  initialData,
   onSave
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -111,43 +117,51 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  /* ================= SINGLE FETCH ================= */
+  /* ================= SINGLE FETCH / INITIALIZATION ================= */
 
   useEffect(() => {
-    if (!orderId) return;
+    if (orderId) {
+      let mounted = true;
+      setLoading(true);
 
-    let mounted = true;
+      dataService.getOrderById(orderId).then((order) => {
+        if (!mounted) return;
 
-    setLoading(true);
+        if (order) {
+          setCustomer({
+            name: order.customer_name,
+            phone: order.phone,
+            address: order.address,
+            showroom: order.showroom,
+            status: order.status,
+            due_date: order.due_date,
+            tailor: order.tailor || TAILORS[0],
+            fitter: order.fitter || FITTERS[0],
+            completed_at: order.completed_at || ""
+          });
 
-    dataService.getOrderById(orderId).then((order) => {
-      if (!mounted) return;
+          setEntries(order.entries || []);
+          setPayments(order.payments || []);
+          setTotalBill(order.total_bill || 0);
+        }
 
-      if (order) {
-        setCustomer({
-          name: order.customer_name,
-          phone: order.phone,
-          address: order.address,
-          showroom: order.showroom,
-          status: order.status,
-          due_date: order.due_date,
-          tailor: order.tailor || TAILORS[0],
-          fitter: order.fitter || FITTERS[0],
-          completed_at: order.completed_at || ""
-        });
+        setLoading(false);
+      });
 
-        setEntries(order.entries || []);
-        setPayments(order.payments || []);
-        setTotalBill(order.total_bill || 0);
+      return () => {
+        mounted = false;
+      };
+    } else if (initialData) {
+      setCustomer(prev => ({
+        ...prev,
+        name: initialData.name || "",
+        phone: initialData.phone || ""
+      }));
+      if (initialData.totalBill !== undefined && initialData.totalBill !== null) {
+        setTotalBill(Number(initialData.totalBill) || 0);
       }
-
-      setLoading(false);
-    });
-
-    return () => {
-      mounted = false;
-    };
-  }, [orderId]);
+    }
+  }, [orderId, initialData]);
 
   /* ================= MEMO VALUES ================= */
 
@@ -791,6 +805,148 @@ export const Calculator: React.FC<CalculatorProps> = ({
     doc.save(`FittingSheet_${customer.name}_${new Date().toISOString().split('T')[0]}.pdf`);
   }, [customer, entries]);
 
+  const handleDownloadDeliveryChallan = useCallback(() => {
+    const doc = new jsPDF();
+    const navy: [number, number, number] = [0, 45, 98];
+
+    // Header Background Accent
+    doc.setFillColor(navy[0], navy[1], navy[2]);
+    doc.rect(0, 0, 210, 42, 'F');
+    
+    doc.setFontSize(26);
+    doc.setTextColor(255);
+    doc.setFont("helvetica", "bold");
+    doc.text("QUILT & DRAPES", 105, 16, { align: "center" });
+    
+    doc.setFontSize(9);
+    doc.setTextColor(200);
+    doc.setFont("helvetica", "normal");
+    doc.text("F A B R I C A T I O N S   &   I N T E R I O R S", 105, 24, { align: "center" });
+    
+    doc.setFontSize(13);
+    doc.setTextColor(255);
+    doc.setFont("helvetica", "bold");
+    doc.text("DELIVERY CHALLAN", 105, 33, { align: "center" });
+
+    // Client/Metadata Section
+    doc.setTextColor(navy[0], navy[1], navy[2]);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("DELIVERY CHALLAN FOR", 15, 54);
+    
+    doc.setDrawColor(navy[0], navy[1], navy[2]);
+    doc.setLineWidth(0.5);
+    doc.line(15, 56, 65, 56);
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(0);
+    doc.text(`Name: ${customer.name || 'Valued Client'}`, 15, 64);
+    doc.text(`Phone: ${customer.phone || 'N/A'}`, 15, 70);
+    if (customer.address) {
+      const addressLines = doc.splitTextToSize(`Address: ${customer.address}`, 90);
+      doc.text(addressLines, 15, 76);
+    }
+    
+    const displayDate = new Date().toLocaleDateString('en-GB');
+    doc.setFont("helvetica", "bold");
+    doc.text(`Date: ${displayDate}`, 195, 64, { align: "right" });
+    
+    const uniqueId = orderId ? `#${orderId}` : `#DC-${Math.floor(100000 + Math.random() * 900000)}`;
+    doc.text(`ID: ${uniqueId}`, 195, 70, { align: "right" });
+    if (customer.showroom) {
+      doc.setFont("helvetica", "normal");
+      doc.text(`Showroom: ${customer.showroom}`, 195, 76, { align: "right" });
+    }
+
+    let currentY = customer.address ? 86 : 82;
+
+    // Table Columns & Body
+    const tableHead = [['SNo', 'Products / Unit Specification', 'Total QTY / Size', 'Delivered Status', 'Notes / Remarks']];
+    
+    const tableBody = entries.length > 0 ? entries.map((e, idx) => {
+      const isBlind = e.stitch_type.toLowerCase().includes('blind') || e.stitch_type.toLowerCase().includes('roman');
+      const qtyText = isBlind 
+        ? `${e.sqft || 0} Sqft (${e.width}" x ${e.height}")`
+        : `${e.quantity || 0} Mtrs (${e.panels || 0} Panels, ${e.width}" x ${e.height}")`;
+      
+      const desc = `${e.window_name || `Item #${idx+1}`} - ${e.stitch_type} (${e.lining_type})${e.is_double_layer ? ' [2 Layers]' : ''}`;
+      
+      return [
+        idx + 1,
+        desc,
+        qtyText,
+        "Pending Delivery / Handed Over",
+        e.notes || e.fitting_comments || ''
+      ];
+    }) : [
+      [1, 'General Order Delivery', 'As Specified', 'Pending Delivery / Handed Over', '']
+    ];
+
+    autoTable(doc, {
+      startY: currentY,
+      head: tableHead,
+      body: tableBody,
+      theme: 'grid',
+      headStyles: { fillColor: navy, fontSize: 8.5, fontStyle: 'bold', cellPadding: 2.5 },
+      bodyStyles: { fontSize: 8.5, textColor: [40, 40, 40], cellPadding: 2.5 },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 75 },
+        2: { cellWidth: 35, halign: 'center' },
+        3: { cellWidth: 35, halign: 'center' },
+        4: { cellWidth: 35 }
+      },
+      margin: { left: 15, right: 15 },
+      didDrawPage: (data) => {
+        currentY = data.cursor?.y || currentY;
+      }
+    });
+
+    currentY += 12;
+
+    if (currentY > 210) {
+      doc.addPage();
+      currentY = 25;
+    }
+
+    doc.setTextColor(50);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("TERMS OF MATERIAL DELIVERY", 15, currentY);
+    
+    doc.setDrawColor(navy[0], navy[1], navy[2]);
+    doc.setLineWidth(0.3);
+    doc.line(15, currentY + 1.5, 65, currentY + 1.5);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(100);
+    doc.text([
+      "1. Material/Goods received in complete and pristine physical condition.",
+      "2. Any damages, scratches or discrepancies must be highlighted immediately upon handover.",
+      "3. Installation schedule depends on ready physical conditions of site.",
+    ], 15, currentY + 8);
+
+    currentY += 38;
+
+    // Signature Blocks
+    doc.setDrawColor(180);
+    doc.setLineWidth(0.4);
+    doc.line(15, currentY + 12, 75, currentY + 12);
+    doc.line(135, currentY + 12, 195, currentY + 12);
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(60);
+    doc.text("Receiver's Signature & Date", 15, currentY + 17);
+    doc.text("For Quilt & Drapes (Authorized Signature)", 135, currentY + 17);
+
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  }, [customer, entries, orderId]);
+
   /* ================= RETURN ================= */
   /* KEEP YOUR ORIGINAL JSX BELOW THIS LINE */
  
@@ -825,6 +981,12 @@ export const Calculator: React.FC<CalculatorProps> = ({
               className="w-full md:w-auto px-6 py-4 bg-white text-emerald-600 border border-emerald-200 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-sm hover:bg-emerald-50 transition-colors"
             >
               <i className="fas fa-tools"></i> Fitting Work Sheet
+            </button>
+            <button 
+              onClick={handleDownloadDeliveryChallan}
+              className="w-full md:w-auto px-6 py-4 bg-white text-amber-600 border border-amber-200 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-3 shadow-sm hover:bg-amber-50 transition-colors"
+            >
+              <i className="fas fa-truck"></i> Delivery Challan
             </button>
             <button 
               disabled={loading}

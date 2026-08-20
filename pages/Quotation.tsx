@@ -18,7 +18,13 @@ const PRODUCT_CATEGORIES = [
 
 type CategoryType = typeof PRODUCT_CATEGORIES[number];
 
-export const Quotation: React.FC = () => {
+const DEFAULT_TERMS = "1. 70% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back.\n4. Order completion will take 10-15 days from date of Advance.";
+
+interface QuotationProps {
+  onConvertToCustomer?: (data: { name: string; phone: string; totalBill: number }) => void;
+}
+
+export const Quotation: React.FC<QuotationProps> = ({ onConvertToCustomer }) => {
   const [view, setView] = useState<'create' | 'list'>('create');
   const [savedQuotes, setSavedQuotes] = useState<QType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,9 +40,7 @@ export const Quotation: React.FC = () => {
   const [items, setItems] = useState<QuotationItem[]>([]);
   const [additionalDiscount, setAdditionalDiscount] = useState<number>(0);
   const [gstPercent, setGstPercent] = useState<number>(0);
-  const [terms, setTerms] = useState<string>(
-    "1. 50% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back.\n4. Subject to Jaipur Jurisdiction."
-  );
+  const [terms, setTerms] = useState<string>(DEFAULT_TERMS);
 
   const fetchQuotations = useCallback(async (search?: string) => {
     setIsLoading(true);
@@ -244,7 +248,7 @@ export const Quotation: React.FC = () => {
     setItems(loadedItems);
     setAdditionalDiscount(q.additional_discount || 0);
     setGstPercent(q.gst_percent || 0);
-    setTerms(q.terms_conditions || "1. 50% advance to initiate order.\n2. Balance on completion and before delivery.\n3. Goods once sold will not be taken back.\n4. Subject to Jaipur Jurisdiction.");
+    setTerms(q.terms_conditions || DEFAULT_TERMS);
     setView('create');
   };
 
@@ -269,10 +273,23 @@ export const Quotation: React.FC = () => {
     setItems([]);
     setAdditionalDiscount(0);
     setGstPercent(0);
+    setTerms(DEFAULT_TERMS);
     setView('create');
   };
 
-  const handleDownloadPDF = useCallback((pdfType: 'quotation' | 'delivery_challan', overrideQuote?: QType) => {
+  const handleConvertToCustomer = () => {
+    if (!customer.name) {
+      alert("Please enter customer name before converting to a customer order.");
+      return;
+    }
+    onConvertToCustomer?.({
+      name: customer.name,
+      phone: customer.phone || '',
+      totalBill: Math.round(finalTotalAmount || 0)
+    });
+  };
+
+  const handleDownloadPDF = useCallback((overrideQuote?: QType) => {
     const doc = new jsPDF();
     const navy: [number, number, number] = [0, 45, 98];
     
@@ -323,13 +340,13 @@ export const Quotation: React.FC = () => {
     doc.setFontSize(13);
     doc.setTextColor(255);
     doc.setFont("helvetica", "bold");
-    doc.text(pdfType === 'quotation' ? "ESTIMATED QUOTATION" : "DELIVERY CHALLAN", 105, 33, { align: "center" });
+    doc.text("ESTIMATED QUOTATION", 105, 33, { align: "center" });
 
     // Client/Metadata Section
     doc.setTextColor(navy[0], navy[1], navy[2]);
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text(pdfType === 'quotation' ? "CLIENT ESTIMATE DETAILS" : "DELIVERY CHALLAN FOR", 15, 54);
+    doc.text("CLIENT ESTIMATE DETAILS", 15, 54);
     
     doc.setDrawColor(navy[0], navy[1], navy[2]);
     doc.setLineWidth(0.5);
@@ -351,38 +368,21 @@ export const Quotation: React.FC = () => {
     let currentY = 82;
 
     // Table Columns & Body
-    let tableHead: string[][];
-    let tableBody: any[][];
-
-    if (pdfType === 'quotation') {
-      tableHead = [['SNo', 'Products', 'Total QTY', 'Total Cost', 'Total Cost Post Discount']];
+    const tableHead = [['SNo', 'Products', 'Total QTY', 'Total Cost', 'Total Cost Post Discount']];
+    
+    const tableBody = currentItems.map((item, idx) => {
+      const cost = (item.qty || 0) * (item.rate || 0);
+      const discountAmt = cost * ((item.discount_percent || 0) / 100);
+      const postDiscount = cost - discountAmt;
       
-      tableBody = currentItems.map((item, idx) => {
-        const cost = (item.qty || 0) * (item.rate || 0);
-        const discountAmt = cost * ((item.discount_percent || 0) / 100);
-        const postDiscount = cost - discountAmt;
-        
-        return [
-          idx + 1,
-          item.name || `${item.type}`,
-          `${item.qty} ${item.unit || ''}`.trim(),
-          `Rs. ${Math.round(cost).toLocaleString()}`,
-          `Rs. ${Math.round(postDiscount).toLocaleString()}`
-        ];
-      });
-    } else {
-      // Delivery Challan
-      tableHead = [['SNo', 'Products', 'Total QTY', 'Delivered Status', 'Notes / Remarks']];
-      tableBody = currentItems.map((item, idx) => {
-        return [
-          idx + 1,
-          item.name || `${item.type}`,
-          `${item.qty} ${item.unit || ''}`.trim(),
-          "Pending Delivery / Handed Over",
-          item.comment || ''
-        ];
-      });
-    }
+      return [
+        idx + 1,
+        item.name || `${item.type}`,
+        `${item.qty} ${item.unit || ''}`.trim(),
+        `Rs. ${Math.round(cost).toLocaleString()}`,
+        `Rs. ${Math.round(postDiscount).toLocaleString()}`
+      ];
+    });
 
     autoTable(doc, {
       startY: currentY,
@@ -391,18 +391,12 @@ export const Quotation: React.FC = () => {
       theme: 'grid',
       headStyles: { fillColor: navy, fontSize: 8.5, fontStyle: 'bold', cellPadding: 2.5 },
       bodyStyles: { fontSize: 8.5, textColor: [40, 40, 40], cellPadding: 2.5 },
-      columnStyles: pdfType === 'quotation' ? {
+      columnStyles: {
         0: { cellWidth: 10, halign: 'center' },
         1: { cellWidth: 75 },
         2: { cellWidth: 25, halign: 'center' },
         3: { cellWidth: 32, halign: 'right' },
         4: { cellWidth: 38, halign: 'right', fontStyle: 'bold' }
-      } : {
-        0: { cellWidth: 10, halign: 'center' },
-        1: { cellWidth: 80 },
-        2: { cellWidth: 25, halign: 'center' },
-        3: { cellWidth: 35, halign: 'center' },
-        4: { cellWidth: 30 }
       },
       margin: { left: 15, right: 15 },
       didDrawPage: (data) => {
@@ -412,123 +406,83 @@ export const Quotation: React.FC = () => {
 
     currentY += 10;
 
-    if (pdfType === 'quotation') {
-      // Recalculate values for current list
-      const sumCost = currentItems.reduce((sum, item) => sum + ((item.qty || 0) * (item.rate || 0)), 0);
-      const sumPostDiscount = currentItems.reduce((sum, item) => {
-        const base = (item.qty || 0) * (item.rate || 0);
-        return sum + (base - (base * ((item.discount_percent || 0) / 100)));
-      }, 0);
+    // Recalculate values for current list
+    const sumCost = currentItems.reduce((sum, item) => sum + ((item.qty || 0) * (item.rate || 0)), 0);
+    const sumPostDiscount = currentItems.reduce((sum, item) => {
+      const base = (item.qty || 0) * (item.rate || 0);
+      return sum + (base - (base * ((item.discount_percent || 0) / 100)));
+    }, 0);
 
-      const beforeGst = Math.max(0, sumPostDiscount - currentAdditionalDiscount);
-      const gstAmt = Math.round(beforeGst * (currentGstPercent / 100));
-      const totalAmount = beforeGst + gstAmt;
+    const beforeGst = Math.max(0, sumPostDiscount - currentAdditionalDiscount);
+    const gstAmt = Math.round(beforeGst * (currentGstPercent / 100));
+    const totalAmount = beforeGst + gstAmt;
 
-      if (currentY > 210) {
-        doc.addPage();
-        currentY = 25;
-      }
-
-      // Add Grand Total summary block
-      doc.setDrawColor(220);
-      doc.line(110, currentY, 195, currentY);
-      currentY += 6;
-
-      doc.setFontSize(9.5);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100);
-      doc.text("Sum of Total Cost:", 120, currentY);
-      doc.text(`Rs. ${Math.round(sumCost).toLocaleString()}`, 195, currentY, { align: "right" });
-      
-      currentY += 6;
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(navy[0], navy[1], navy[2]);
-      doc.text("Post Discount Subtotal:", 120, currentY);
-      doc.text(`Rs. ${Math.round(sumPostDiscount).toLocaleString()}`, 195, currentY, { align: "right" });
-
-      if (currentAdditionalDiscount > 0) {
-        currentY += 6;
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(190, 0, 0);
-        doc.text("Less Additional Discount:", 120, currentY);
-        doc.text(`- Rs. ${currentAdditionalDiscount.toLocaleString()}`, 195, currentY, { align: "right" });
-      }
-
-      if (currentGstPercent > 0) {
-        currentY += 6;
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(100);
-        doc.text(`GST (${currentGstPercent}%):`, 120, currentY);
-        doc.text(`Rs. ${gstAmt.toLocaleString()}`, 195, currentY, { align: "right" });
-      }
-
-      currentY += 9;
-      doc.setFillColor(254, 240, 138); // Yellow background like sample image
-      doc.rect(115, currentY - 5, 80, 10, 'F');
-      doc.setDrawColor(234, 179, 8);
-      doc.rect(115, currentY - 5, 80, 10, 'S');
-      
-      doc.setTextColor(0);
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.text("Grand Total:", 120, currentY + 1.5);
-      doc.text(`Rs. ${Math.round(totalAmount).toLocaleString()}`, 190, currentY + 1.5, { align: "right" });
-
-      // Terms Box
-      currentY = Math.max(currentY + 22, 230);
-      doc.setTextColor(50);
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      doc.text("TERMS & CONDITIONS", 15, currentY);
-      
-      doc.setDrawColor(navy[0], navy[1], navy[2]);
-      doc.setLineWidth(0.3);
-      doc.line(15, currentY + 1.5, 55, currentY + 1.5);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(80);
-      const splitTerms = doc.splitTextToSize(currentTerms, 180);
-      doc.text(splitTerms, 15, currentY + 7);
-    } else {
-      // Delivery Challan Footer
-      if (currentY > 210) {
-        doc.addPage();
-        currentY = 25;
-      }
-
-      doc.setTextColor(50);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.text("TERMS OF MATERIAL DELIVERY", 15, currentY);
-      
-      doc.setDrawColor(navy[0], navy[1], navy[2]);
-      doc.setLineWidth(0.3);
-      doc.line(15, currentY + 1.5, 65, currentY + 1.5);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.setTextColor(100);
-      doc.text([
-        "1. Material/Goods received in complete and pristine physical condition.",
-        "2. Any damages, scratches or discrepancies must be highlighted immediately upon handover.",
-        "3. Installation schedule depends on ready physical conditions of site.",
-      ], 15, currentY + 8);
-
-      currentY += 38;
-
-      // Signature Blocks
-      doc.setDrawColor(180);
-      doc.setLineWidth(0.4);
-      doc.line(15, currentY + 12, 75, currentY + 12);
-      doc.line(135, currentY + 12, 195, currentY + 12);
-
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(60);
-      doc.text("Receiver's Signature & Date", 15, currentY + 17);
-      doc.text("For Quilt & Drapes (Authorized Signature)", 135, currentY + 17);
+    if (currentY > 210) {
+      doc.addPage();
+      currentY = 25;
     }
+
+    // Add Grand Total summary block
+    doc.setDrawColor(220);
+    doc.line(110, currentY, 195, currentY);
+    currentY += 6;
+
+    doc.setFontSize(9.5);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100);
+    doc.text("Sum of Total Cost:", 120, currentY);
+    doc.text(`Rs. ${Math.round(sumCost).toLocaleString()}`, 195, currentY, { align: "right" });
+    
+    currentY += 6;
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(navy[0], navy[1], navy[2]);
+    doc.text("Post Discount Subtotal:", 120, currentY);
+    doc.text(`Rs. ${Math.round(sumPostDiscount).toLocaleString()}`, 195, currentY, { align: "right" });
+
+    if (currentAdditionalDiscount > 0) {
+      currentY += 6;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(190, 0, 0);
+      doc.text("Less Additional Discount:", 120, currentY);
+      doc.text(`- Rs. ${currentAdditionalDiscount.toLocaleString()}`, 195, currentY, { align: "right" });
+    }
+
+    if (currentGstPercent > 0) {
+      currentY += 6;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100);
+      doc.text(`GST (${currentGstPercent}%):`, 120, currentY);
+      doc.text(`Rs. ${gstAmt.toLocaleString()}`, 195, currentY, { align: "right" });
+    }
+
+    currentY += 9;
+    doc.setFillColor(254, 240, 138); // Yellow background
+    doc.rect(115, currentY - 5, 80, 10, 'F');
+    doc.setDrawColor(234, 179, 8);
+    doc.rect(115, currentY - 5, 80, 10, 'S');
+    
+    doc.setTextColor(0);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Grand Total:", 120, currentY + 1.5);
+    doc.text(`Rs. ${Math.round(totalAmount).toLocaleString()}`, 190, currentY + 1.5, { align: "right" });
+
+    // Terms Box
+    currentY = Math.max(currentY + 22, 230);
+    doc.setTextColor(50);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("TERMS & CONDITIONS", 15, currentY);
+    
+    doc.setDrawColor(navy[0], navy[1], navy[2]);
+    doc.setLineWidth(0.3);
+    doc.line(15, currentY + 1.5, 55, currentY + 1.5);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(80);
+    const splitTerms = doc.splitTextToSize(currentTerms, 180);
+    doc.text(splitTerms, 15, currentY + 7);
 
     const blob = doc.output('blob');
     const url = URL.createObjectURL(blob);
@@ -562,22 +516,23 @@ export const Quotation: React.FC = () => {
           {view === 'create' && (
             <>
               <button 
-                onClick={handleSaveQuotation}
+                onClick={handleConvertToCustomer}
                 className="px-6 py-3.5 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-md hover:bg-emerald-700 transition-all flex items-center gap-2 active:scale-95"
+                title="Convert this quote directly into an active customer order in Project Studio"
+              >
+                <i className="fas fa-user-plus text-sm"></i> Convert to Customer
+              </button>
+              <button 
+                onClick={handleSaveQuotation}
+                className="px-6 py-3.5 bg-[#002d62] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-md hover:bg-blue-800 transition-all flex items-center gap-2 active:scale-95"
               >
                 <i className="fas fa-save"></i> Save Quotation
               </button>
               <button 
-                onClick={() => handleDownloadPDF('quotation')}
-                className="px-6 py-3.5 bg-[#002d62] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-md hover:bg-[#003d7a] transition-all flex items-center gap-2 active:scale-95"
+                onClick={() => handleDownloadPDF()}
+                className="px-6 py-3.5 bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-md hover:bg-black transition-all flex items-center gap-2 active:scale-95"
               >
                 <i className="fas fa-print"></i> Download PDF
-              </button>
-              <button 
-                onClick={() => handleDownloadPDF('delivery_challan')}
-                className="px-6 py-3.5 bg-amber-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-md hover:bg-amber-700 transition-all flex items-center gap-2 active:scale-95"
-              >
-                <i className="fas fa-truck"></i> Delivery Challan
               </button>
             </>
           )}
@@ -649,19 +604,32 @@ export const Quotation: React.FC = () => {
                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Final Total</div>
                          <div className="text-2xl font-black text-[#002d62]">₹{Math.round(quote.total_amount || 0).toLocaleString()}</div>
                        </div>
-                       <div className="flex flex-col gap-1.5">
+                       <div className="flex flex-col gap-1.5 min-w-[110px]">
                          <button 
-                           onClick={() => loadQuotation(quote)}
-                           className="px-4 py-2 bg-[#002d62] text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-800 transition-all text-center"
+                           onClick={() => onConvertToCustomer?.({
+                             name: quote.customer_name,
+                             phone: quote.phone || '',
+                             totalBill: Math.round(quote.total_amount || 0)
+                           })}
+                           className="px-3 py-1.5 bg-emerald-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all text-center flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+                           title="Convert to Customer Order"
                          >
-                           Edit
+                           <i className="fas fa-user-plus text-[10px]"></i> Convert
                          </button>
-                         <button 
-                           onClick={() => handleDownloadPDF('quotation', quote)}
-                           className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all text-center"
-                         >
-                           Print PDF
-                         </button>
+                         <div className="flex gap-1.5">
+                           <button 
+                             onClick={() => loadQuotation(quote)}
+                             className="flex-1 px-2.5 py-1.5 bg-[#002d62] text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-800 transition-all text-center"
+                           >
+                             Edit
+                           </button>
+                           <button 
+                             onClick={() => handleDownloadPDF(quote)}
+                             className="flex-1 px-2.5 py-1.5 bg-slate-100 text-slate-700 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all text-center"
+                           >
+                             PDF
+                           </button>
+                         </div>
                        </div>
                     </div>
                   </div>

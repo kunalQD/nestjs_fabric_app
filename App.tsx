@@ -16,6 +16,11 @@ const App: React.FC = () => {
   const [user, setUser] = useState<{ username: string; role: UserRole } | null>(null);
   const [currentPage, setCurrentPage] = useState<'dashboard' | 'calculator' | 'billing' | 'settlements' | 'calendar' | 'visualizer' | 'quotation'>('dashboard');
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [initialCalculatorData, setInitialCalculatorData] = useState<{
+    name?: string;
+    phone?: string;
+    totalBill?: number;
+  } | null>(null);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('qd_user');
@@ -41,9 +46,21 @@ const App: React.FC = () => {
     localStorage.removeItem('qd_token');
   };
 
-  const navigateToCalculator = (orderId?: string) => {
+  const navigateToCalculator = (
+    orderId?: string,
+    initialData?: { name?: string; phone?: string; totalBill?: number }
+  ) => {
     setEditingOrderId(orderId || null);
+    setInitialCalculatorData(initialData || null);
     setCurrentPage('calculator');
+  };
+
+  const handlePageChange = (page: 'dashboard' | 'calculator' | 'billing' | 'settlements' | 'calendar' | 'visualizer' | 'quotation') => {
+    if (page !== 'calculator') {
+      setEditingOrderId(null);
+      setInitialCalculatorData(null);
+    }
+    setCurrentPage(page);
   };
 
   const onAuthError = () => {
@@ -58,7 +75,7 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col">
       <Navbar 
         currentPage={currentPage} 
-        setCurrentPage={setCurrentPage} 
+        setCurrentPage={handlePageChange} 
         userRole={user.role}
         onLogout={handleLogout}
       />
@@ -69,7 +86,11 @@ const App: React.FC = () => {
         {currentPage === 'calculator' && (
           <Calculator 
             orderId={editingOrderId} 
-            onSave={() => setCurrentPage('dashboard')} 
+            initialData={initialCalculatorData}
+            onSave={() => {
+              setInitialCalculatorData(null);
+              setCurrentPage('dashboard');
+            }} 
           />
         )}
         {currentPage === 'billing' && user.role === UserRole.ADMIN && (
@@ -85,7 +106,9 @@ const App: React.FC = () => {
           <Visualizer />
         )}
         {currentPage === 'quotation' && (
-          <Quotation />
+          <Quotation 
+            onConvertToCustomer={(data) => navigateToCalculator(undefined, data)}
+          />
         )}
       </main>
       
